@@ -22,7 +22,7 @@ const ESSENTIAL_NOTES = [
   },
   {
     q: 'Do I need an email address or fee to join?',
-    a: 'Neither. Registration uses only your name, Maples Academy roll number, class, and section/stream, with zero fee.',
+    a: 'No email or fee is required. Register using your name, school roll number, class, and section or stream.',
   },
   {
     q: 'When can I review my score and question-wise answers?',
@@ -146,7 +146,7 @@ export default function HomePage() {
                   <div>
                     <dt className="text-xs text-slate-500">Pool / class</dt>
                     <dd className="mt-1 font-mono text-xl font-semibold text-slate-900 tabular-nums">
-                      108 Qs
+                      Private
                     </dd>
                   </div>
                   <div>
@@ -209,11 +209,10 @@ export default function HomePage() {
               </div>
               <div className="mt-4 px-2">
                 <h3 className="text-base font-semibold text-slate-900">
-                  Random draw from 108+ questions per class
+                  A private, class-specific question bank
                 </h3>
                 <p className="mt-1 text-sm text-slate-600 max-w-[46ch]">
-                  Each attempt shuffles a unique 25-question paper so neighbors
-                  never receive the same test.
+                  Each attempt draws a randomized paper from questions configured by your teacher. Some questions may overlap.
                 </p>
               </div>
             </div>

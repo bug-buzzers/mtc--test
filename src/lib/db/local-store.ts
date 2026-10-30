@@ -1,276 +1,106 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
 import { CLASSES } from '../constants';
-import {
-  Admin,
-  ExamConfig,
-  OptionKey,
-  Question,
-  QuizAttempt,
-  QuizResponse,
-  Student,
-} from '../types';
-import {
-  loadAllQuestionsFromQuizFiles,
-  loadAllQuizSchemaFiles,
-} from './quiz-files-loader';
+import { Admin, AuthSession, ExamConfig, IntegrityEvent, Question, QuizAttempt, QuizResponse, Student, StudentInvite } from '../types';
 
+/** Local storage is an explicit development/test aid, never the production database. */
 export interface LocalDatabaseSchema {
-  schema_source?: string;
+  schema_source: string;
   students: Student[];
   admins: Admin[];
-  questions: Array<Question & { code?: string }>;
+  questions: Array<Question & { code?: string; bank_generation?: number }>;
   exam_config: ExamConfig[];
   quiz_attempts: QuizAttempt[];
   quiz_responses: QuizResponse[];
+  auth_sessions: AuthSession[];
+  student_invites: StudentInvite[];
+  integrity_events: IntegrityEvent[];
+  login_limits: Array<{ key: string; count: number; window_started_at: string }>;
 }
 
-const DB_DIR = path.join(process.cwd(), 'data');
-const DB_FILE = path.join(DB_DIR, 'mtc-local-db.json');
-const CURRENT_SCHEMA_SOURCE = 'mtc-practical-108-per-class-v3';
+const CURRENT_SCHEMA_SOURCE = 'secure-private-bank-v1';
+const DB_FILE = process.env.MTC_LOCAL_DB_PATH || path.join(process.cwd(), 'data', 'mtc-local-db.json');
 
-function deterministicQuestionUuid(code: string): string {
-  const hash = crypto.createHash('sha256').update(code).digest('hex');
-  return [
-    hash.slice(0, 8),
-    hash.slice(8, 12),
-    '4' + hash.slice(13, 16),
-    'a' + hash.slice(17, 20),
-    hash.slice(20, 32),
-  ].join('-');
-}
-
-function buildInitialSeed(): LocalDatabaseSchema {
+function emptyDatabase(): LocalDatabaseSchema {
   const now = new Date().toISOString();
-  const adminPasswordHash = bcrypt.hashSync('Maples@2026', 10);
-  const studentPasswordHash = bcrypt.hashSync('student123', 10);
-
-  const admins: Admin[] = [
-    {
-      id: crypto.randomUUID(),
-      username: 'admin',
-      password_hash: adminPasswordHash,
-      full_name: 'Faculty Advisor & MTC Coordinator — Maples Academy',
-      created_at: now,
-    },
-  ];
-
-  const quizDocs = loadAllQuizSchemaFiles();
-  const docByClass = new Map(quizDocs.map((d) => [d.class, d]));
-
-  const exam_config: ExamConfig[] = CLASSES.map((cls) => {
-    const defaults = docByClass.get(cls)?.exam_defaults;
-    return {
-      id: crypto.randomUUID(),
-      class: cls,
-      is_open: true,
-      total_questions: defaults?.total_questions_served ?? 25,
-      time_limit_minutes: defaults?.time_limit_minutes ?? 30,
-      passing_score: defaults?.passing_score ?? 18,
-      max_attempts: defaults?.max_attempts ?? 1,
-      show_results_to_students: defaults?.show_results_to_students ?? false,
-      updated_at: now,
-    };
-  });
-
-  // Read questions directly from database/quizzes/class-*.json schema files
-  const schemaQuestions = loadAllQuestionsFromQuizFiles();
-  const questions: Array<Question & { code?: string }> = schemaQuestions.map(
-    (q) => ({
-      id: deterministicQuestionUuid(q.code),
-      code: q.code,
-      class: q.class,
-      subject_tag: q.subject_tag,
-      difficulty: q.difficulty,
-      question_text: q.question_text,
-      option_a: q.option_a,
-      option_b: q.option_b,
-      option_c: q.option_c,
-      option_d: q.option_d,
-      correct_option: q.correct_option,
-      is_active: true,
-      created_at: now,
-      updated_at: now,
-    })
-  );
-
-  const starterStudents: Array<{
-    roll_number: string;
-    full_name: string;
-    class: number;
-    section: string;
-    sampleScore?: number;
-  }> = [
-    // Ready-to-test students (NO prior attempt — ready to click "Start Your Exam")
-    { roll_number: '601', full_name: 'Aarav Sharma', class: 6, section: 'A' },
-    { roll_number: '802', full_name: 'Rohan Chauhan', class: 8, section: 'B' },
-    { roll_number: '1101', full_name: 'Priyanshu Malik', class: 11, section: 'Maths' },
-
-    // Founding Proposers (Harsh Roll 13 & Vidhan — Class XII, Maples Academy Khatauli)
-    { roll_number: '13', full_name: 'Harsh', class: 12, section: 'Maths', sampleScore: 25 },
-    { roll_number: '14', full_name: 'Vidhan', class: 12, section: 'Maths', sampleScore: 24 },
-
-    // Sample graded attempts across Classes 6–12 for Admin Results, Print & Analytics
-    { roll_number: '602', full_name: 'Ananya Verma', class: 6, section: 'B', sampleScore: 21 },
-    { roll_number: '603', full_name: 'Vihaan Gupta', class: 6, section: 'A', sampleScore: 15 },
-    { roll_number: '701', full_name: 'Kabir Tyagi', class: 7, section: 'A', sampleScore: 20 },
-    { roll_number: '702', full_name: 'Navya Rathi', class: 7, section: 'B', sampleScore: 19 },
-    { roll_number: '801', full_name: 'Meera Gupta', class: 8, section: 'A', sampleScore: 23 },
-    { roll_number: '803', full_name: 'Arjun Pundir', class: 8, section: 'A', sampleScore: 19 },
-    { roll_number: '804', full_name: 'Kritika Saini', class: 8, section: 'B', sampleScore: 14 },
-    { roll_number: '901', full_name: 'Ishita Singhal', class: 9, section: 'A', sampleScore: 22 },
-    { roll_number: '902', full_name: 'Yashvardhan Tomar', class: 9, section: 'B', sampleScore: 16 },
-    { roll_number: '1001', full_name: 'Devansh Baliyan', class: 10, section: 'B', sampleScore: 21 },
-    { roll_number: '1102', full_name: 'Riya Choudhary', class: 11, section: 'Bio', sampleScore: 20 },
-    { roll_number: '1103', full_name: 'Kunal Agarwal', class: 11, section: 'Commerce', sampleScore: 13 },
-    { roll_number: '1202', full_name: 'Suhani Jain', class: 12, section: 'Humanities', sampleScore: 19 },
-  ];
-
-  const students: Student[] = [];
-  const quiz_attempts: QuizAttempt[] = [];
-  const quiz_responses: QuizResponse[] = [];
-
-  starterStudents.forEach((s, idx) => {
-    const studentId = crypto.randomUUID();
-    students.push({
-      id: studentId,
-      roll_number: s.roll_number,
-      full_name: s.full_name,
-      class: s.class,
-      section: s.section,
-      password_hash: studentPasswordHash,
-      is_active: true,
-      extra_attempts: 0,
-      created_at: now,
-      updated_at: now,
-    });
-
-    if (typeof s.sampleScore === 'number') {
-      const clsQuestions = questions.filter((q) => q.class === s.class).slice(0, 25);
-      const attemptId = crypto.randomUUID();
-      const startedDate = new Date(Date.now() - (idx + 2) * 3600 * 1000);
-      const durationMinutes = 17 + (idx % 10);
-      const submittedDate = new Date(
-        startedDate.getTime() + durationMinutes * 60 * 1000
-      );
-
-      const correctTarget = Math.min(s.sampleScore, clsQuestions.length);
-      const pct = Number(((correctTarget / clsQuestions.length) * 100).toFixed(2));
-
-      quiz_attempts.push({
-        id: attemptId,
-        student_id: studentId,
-        class: s.class,
-        started_at: startedDate.toISOString(),
-        submitted_at: submittedDate.toISOString(),
-        total_questions: clsQuestions.length,
-        correct_count: correctTarget,
-        score_percentage: pct,
-        passed: correctTarget >= 18,
-        status: 'graded',
-      });
-
-      const allOpts: OptionKey[] = ['a', 'b', 'c', 'd'];
-      clsQuestions.forEach((q, qIdx) => {
-        const makeCorrect = qIdx < correctTarget;
-        const wrongOpts = allOpts.filter((o) => o !== q.correct_option);
-        const chosenOpt: OptionKey = makeCorrect
-          ? q.correct_option
-          : wrongOpts[(qIdx + idx) % wrongOpts.length];
-
-        quiz_responses.push({
-          id: crypto.randomUUID(),
-          attempt_id: attemptId,
-          question_id: q.id,
-          question_order: qIdx + 1,
-          selected_option: chosenOpt,
-          is_correct: makeCorrect,
-        });
-      });
-    }
-  });
-
   return {
     schema_source: CURRENT_SCHEMA_SOURCE,
-    students,
-    admins,
-    questions,
-    exam_config,
-    quiz_attempts,
-    quiz_responses,
+    students: [], admins: [], questions: [], quiz_attempts: [], quiz_responses: [],
+    auth_sessions: [], student_invites: [], integrity_events: [], login_limits: [],
+    exam_config: CLASSES.map((cls) => ({
+      id: crypto.randomUUID(), class: cls, is_open: false, total_questions: 25,
+      time_limit_minutes: 30, passing_score: 18, max_attempts: 1,
+      show_results_to_students: false, updated_at: now,
+    })),
   };
 }
 
-/**
- * Syncs any new questions added to `database/quizzes/class-*.json` into an existing local DB
- * automatically by `code`, without overwriting admin edits/soft-deletes.
- */
-function syncNewQuestionsFromSchemaFiles(db: LocalDatabaseSchema): boolean {
-  const fileQuestions = loadAllQuestionsFromQuizFiles();
-  const existingCodes = new Set(
-    db.questions.map((q) => q.code).filter(Boolean)
-  );
-  const existingIds = new Set(db.questions.map((q) => q.id));
+function snapshot(q: Question) {
+  const { subject_tag, difficulty, question_text, option_a, option_b, option_c, option_d, correct_option } = q;
+  return { subject_tag, difficulty, question_text, option_a, option_b, option_c, option_d, correct_option };
+}
 
-  let changed = false;
-  const now = new Date().toISOString();
-
-  for (const fq of fileQuestions) {
-    const detId = deterministicQuestionUuid(fq.code);
-    if (!existingCodes.has(fq.code) && !existingIds.has(detId)) {
-      db.questions.push({
-        id: detId,
-        code: fq.code,
-        class: fq.class,
-        subject_tag: fq.subject_tag,
-        difficulty: fq.difficulty,
-        question_text: fq.question_text,
-        option_a: fq.option_a,
-        option_b: fq.option_b,
-        option_c: fq.option_c,
-        option_d: fq.option_d,
-        correct_option: fq.correct_option,
-        is_active: true,
-        created_at: now,
-        updated_at: now,
-      });
-      changed = true;
-    }
-  }
-
-  return changed;
+/** Upgrade legacy local data in place, preserving records and a backup. Exposed
+ * questions and existing accounts are disabled until a coordinator reviews them. */
+function upgradeLegacyDb(raw: LocalDatabaseSchema): LocalDatabaseSchema {
+  const db = { ...emptyDatabase(), ...raw };
+  db.admins = (raw.admins || []).map((a) => ({ ...a, is_active: false }));
+  db.students = (raw.students || []).map((s) => ({ ...s, is_active: false, password_reset_required: true }));
+  db.questions = (raw.questions || []).map((q) => ({ ...q, is_active: false, bank_generation: 1 }));
+  db.exam_config = (raw.exam_config || []).map((c) => ({ ...c, is_open: false, show_results_to_students: false }));
+  const questions = new Map(db.questions.map((q) => [q.id, q]));
+  db.quiz_responses = (raw.quiz_responses || []).map((r) => ({
+    ...r, question_snapshot: r.question_snapshot || (questions.get(r.question_id) ? snapshot(questions.get(r.question_id)!) : null),
+  }));
+  db.quiz_attempts = (raw.quiz_attempts || []).map((a) => {
+    const cfg = db.exam_config.find((c) => c.class === a.class);
+    const minutes = a.time_limit_minutes_snapshot || cfg?.time_limit_minutes || 30;
+    return {
+      ...a,
+      status: a.status === 'in_progress' || a.status === 'blocked' ? 'retired' : a.status,
+      deadline_at: a.deadline_at || new Date(new Date(a.started_at).getTime() + minutes * 60_000).toISOString(),
+      passing_score_snapshot: a.passing_score_snapshot || cfg?.passing_score || 18,
+      time_limit_minutes_snapshot: minutes,
+      last_heartbeat_at: a.last_heartbeat_at || a.started_at,
+      tab_switch_warnings: a.tab_switch_warnings || 0,
+      blocked_reason: a.blocked_reason || null,
+      blocked_at: a.blocked_at || null,
+      remaining_seconds_when_blocked: a.remaining_seconds_when_blocked ?? null,
+    };
+  });
+  db.auth_sessions = [];
+  db.student_invites = raw.student_invites || [];
+  db.integrity_events = raw.integrity_events || [];
+  db.login_limits = [];
+  db.schema_source = CURRENT_SCHEMA_SOURCE;
+  return db;
 }
 
 export function readLocalDb(): LocalDatabaseSchema {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
-    const seeded = buildInitialSeed();
-    fs.writeFileSync(DB_FILE, JSON.stringify(seeded, null, 2), 'utf8');
-    return seeded;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Local JSON storage is disabled in production. Configure Supabase.');
   }
-
-  const raw = fs.readFileSync(DB_FILE, 'utf8');
-  const parsed = JSON.parse(raw) as LocalDatabaseSchema;
-
-  // Upgrade older v1 seed automatically to the Proposal-aligned v2 Quiz Schema Bank
+  if (!fs.existsSync(/*turbopackIgnore: true*/ DB_FILE)) {
+    const db = emptyDatabase();
+    writeLocalDb(db);
+    return db;
+  }
+  const parsed = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ DB_FILE, 'utf8')) as LocalDatabaseSchema;
   if (parsed.schema_source !== CURRENT_SCHEMA_SOURCE) {
-    const upgraded = buildInitialSeed();
-    fs.writeFileSync(DB_FILE, JSON.stringify(upgraded, null, 2), 'utf8');
-    return upgraded;
+    const backup = `${DB_FILE}.pre-security-backup`;
+    if (!fs.existsSync(backup)) fs.copyFileSync(DB_FILE, backup);
+    const migrated = upgradeLegacyDb(parsed);
+    writeLocalDb(migrated);
+    return migrated;
   }
-
-  if (syncNewQuestionsFromSchemaFiles(parsed)) {
-    writeLocalDb(parsed);
-  }
-
   return parsed;
 }
 
 export function writeLocalDb(db: LocalDatabaseSchema): void {
-  fs.mkdirSync(DB_DIR, { recursive: true });
-  const tmpFile = `${DB_FILE}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), 'utf8');
-  fs.renameSync(tmpFile, DB_FILE);
+  if (process.env.NODE_ENV === 'production') throw new Error('Local storage is disabled in production.');
+  fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+  const tmp = `${DB_FILE}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(tmp, DB_FILE);
 }

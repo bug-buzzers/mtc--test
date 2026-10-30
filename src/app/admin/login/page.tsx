@@ -4,9 +4,8 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import MaplesLogo from '@/components/MaplesLogo';
-import { apiFetch, saveClientSession } from '@/lib/client-api';
-import { AuthTokenPayload } from '@/lib/types';
-import { ArrowLeft, Info, Key } from '@phosphor-icons/react';
+import { apiFetch, clearClientSession } from '@/lib/client-api';
+import { ArrowLeft, Key } from '@phosphor-icons/react';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -20,29 +19,23 @@ export default function AdminLoginPage() {
     setError('');
     setLoading(true);
 
-    const { ok, data } = await apiFetch<{
-      error?: string;
-      token?: string;
-      user?: AuthTokenPayload;
-    }>('/api/auth/admin/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    });
+    try {
+      const { ok, data } = await apiFetch<{
+        error?: string;
+        user?: { role: string };
+      }>('/api/auth/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      });
 
-    setLoading(false);
-    if (!ok || !data.token || !data.user) {
-      setError(data.error || 'Invalid coordinator username or password.');
-      return;
-    }
+      if (!ok || !data.user) {
+        setError(data.error || 'Invalid coordinator username or password.');
+        return;
+      }
 
-    saveClientSession(data.token, data.user);
-    router.push('/admin/dashboard');
-  };
-
-  const autofillAdmin = () => {
-    setUsername('admin');
-    setPassword('Maples@2026');
-    setError('');
+      clearClientSession();
+      router.push('/admin/dashboard');
+    } catch { setError('Connection failed. Please try again.'); } finally { setLoading(false); }
   };
 
   return (
@@ -132,24 +125,7 @@ export default function AdminLoginPage() {
             </button>
           </form>
 
-          <details className="mt-6 rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 text-xs text-slate-600">
-            <summary className="cursor-pointer font-medium text-slate-700 flex items-center gap-1.5 select-none">
-              <Info size={15} weight="regular" className="text-maple-600" />
-              Default coordinator credentials
-            </summary>
-            <div className="mt-2.5 flex items-center justify-between gap-2">
-              <div className="font-mono text-slate-700">
-                admin / Maples@2026
-              </div>
-              <button
-                type="button"
-                onClick={autofillAdmin}
-                className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-slate-300 active:scale-[0.98] font-medium text-slate-700 shrink-0 transition"
-              >
-                Fill
-              </button>
-            </div>
-          </details>
+
         </div>
       </div>
 

@@ -26,6 +26,7 @@ interface StudentRow {
   class: number;
   section: string;
   is_active: boolean;
+  password_reset_required: boolean;
   extra_attempts: number;
   attempts_count: number;
   created_at: string;
@@ -44,7 +45,7 @@ export default function AdminStudentsPage() {
   const [newRoll, setNewRoll] = useState('');
   const [newClass, setNewClass] = useState<number>(6);
   const [newSection, setNewSection] = useState<string>('A');
-  const [newPassword, setNewPassword] = useState('student123');
+  const [newPassword, setNewPassword] = useState('');
   const [formErr, setFormErr] = useState('');
 
   const [resetStudent, setResetStudent] = useState<StudentRow | null>(null);
@@ -123,10 +124,11 @@ export default function AdminStudentsPage() {
   };
 
   const toggleActive = async (stu: StudentRow) => {
-    const { ok } = await apiFetch(`/api/admin/students/${stu.id}`, {
+    const { ok, data } = await apiFetch<{ error?: string }>(`/api/admin/students/${stu.id}`, {
       method: 'PUT',
       body: JSON.stringify({ is_active: !stu.is_active }),
     });
+    if (!ok) { showNotice(data.error || 'Unable to change account status.'); return; }
     if (ok) {
       showNotice(
         `${stu.full_name} account ${
@@ -151,7 +153,7 @@ export default function AdminStudentsPage() {
 
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resetStudent || resetPasswordValue.trim().length < 4) return;
+    if (!resetStudent || resetPasswordValue.trim().length < 10) return;
     const { ok } = await apiFetch(`/api/admin/students/${resetStudent.id}`, {
       method: 'PUT',
       body: JSON.stringify({ new_password: resetPasswordValue.trim() }),
@@ -160,7 +162,8 @@ export default function AdminStudentsPage() {
       showNotice(`Password updated for ${resetStudent.full_name}.`);
       setResetStudent(null);
       setResetPasswordValue('');
-    }
+      loadStudents();
+    } else showNotice('Unable to reset this password.');
   };
 
   const sectionOptions =
@@ -173,6 +176,7 @@ export default function AdminStudentsPage() {
       title="Student directory"
       subtitle="Manage registered student accounts, reset passwords, or grant additional exam attempts"
       actions={
+        <>
         <button
           type="button"
           onClick={() => setShowAddModal(true)}
@@ -181,6 +185,7 @@ export default function AdminStudentsPage() {
           <UserPlus size={16} weight="regular" />
           Register student
         </button>
+        </>
       }
     >
       {toast && (
@@ -282,6 +287,7 @@ export default function AdminStudentsPage() {
                     </td>
                     <td className="px-5 py-3.5 font-medium text-slate-900">
                       {stu.full_name}
+                      {stu.password_reset_required && <span className="mt-1 block text-xs font-normal text-rose-700">Password reset required</span>}
                     </td>
                     <td className="px-5 py-3.5 font-mono text-xs text-slate-700 tabular-nums">
                       Class {stu.class}
@@ -443,9 +449,9 @@ export default function AdminStudentsPage() {
                   Initial password
                 </label>
                 <input
-                  type="text"
+                  type="password"
                   required
-                  minLength={4}
+                  minLength={10}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono text-sm text-slate-900"
@@ -485,10 +491,10 @@ export default function AdminStudentsPage() {
             </p>
             <form onSubmit={handlePasswordReset} className="mt-4 space-y-4">
               <input
-                type="text"
+                type="password"
                 required
-                minLength={4}
-                placeholder="New password (min 4 characters)"
+                minLength={10}
+                placeholder="New password (min 10 characters)"
                 value={resetPasswordValue}
                 onChange={(e) => setResetPasswordValue(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono text-sm text-slate-900"

@@ -114,7 +114,7 @@ export const AutoSortingTopicStack = memo(function AutoSortingTopicStack() {
               </div>
             </div>
             <span className="font-mono text-xs font-medium text-slate-500 tabular-nums shrink-0">
-              {item.count} Qs
+              Practical
             </span>
           </motion.div>
         );
@@ -184,7 +184,7 @@ export const LivePromptTypewriter = memo(function LivePromptTypewriter() {
         <div className="flex items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-100">
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-maple-600">
             <TerminalWindow size={15} weight="regular" />
-            {activePrompt.category}
+            {activePrompt.category} · Example
           </span>
           <span className="font-mono text-[11px] text-slate-400 tabular-nums">
             0{promptIdx + 1} / 0{SAMPLE_PROMPTS.length}
@@ -247,25 +247,25 @@ export const LiveExamStatusCard = memo(function LiveExamStatusCard() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-maple-500 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-maple-500" />
           </span>
-          Classes 6–12 active
+          Classes 6–12
         </div>
 
         <span className="font-mono text-xs text-slate-400 tabular-nums">
-          30:00 timer
+          Example: 30:00
         </span>
       </div>
 
       <div className="my-5 grid grid-cols-2 gap-3">
         <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/60">
-          <p className="text-xs text-slate-500">Served per test</p>
+          <p className="text-xs text-slate-500">Default questions</p>
           <p className="mt-1 font-mono text-2xl font-semibold text-slate-900 tabular-nums">
             25
           </p>
         </div>
         <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/60">
-          <p className="text-xs text-slate-500">Pool per class</p>
+          <p className="text-xs text-slate-500">Question bank</p>
           <p className="mt-1 font-mono text-2xl font-semibold text-slate-900 tabular-nums">
-            108
+            Private
           </p>
         </div>
       </div>
@@ -282,7 +282,7 @@ export const LiveExamStatusCard = memo(function LiveExamStatusCard() {
             >
               <span className="inline-flex items-center gap-1.5 font-medium">
                 <Shuffle size={14} weight="regular" className="text-maple-600" />
-                Random paper generated
+                Example random draw
               </span>
               <span className="font-mono text-[11px] text-maple-700 tabular-nums">
                 #MTC-{drawSeed}
@@ -462,13 +462,13 @@ export function ClassFormatExplorer() {
 
             <div className="mt-8 pt-6 border-t border-slate-100 grid grid-cols-3 gap-4">
               <div>
-                <p className="text-xs text-slate-500">Questions</p>
+                <p className="text-xs text-slate-500">Default questions</p>
                 <p className="mt-1 font-mono text-lg font-semibold text-slate-900 tabular-nums">
                   25 MCQs
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Time limit</p>
+                <p className="text-xs text-slate-500">Default time</p>
                 <p className="mt-1 font-mono text-lg font-semibold text-slate-900 tabular-nums">
                   30 min
                 </p>
@@ -476,7 +476,7 @@ export function ClassFormatExplorer() {
               <div>
                 <p className="text-xs text-slate-500">Class pool</p>
                 <p className="mt-1 font-mono text-lg font-semibold text-slate-900 tabular-nums">
-                  108 Qs
+                  Private
                 </p>
               </div>
             </div>

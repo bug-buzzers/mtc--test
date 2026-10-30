@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRequestAuth } from '@/lib/auth';
+import { getRequestAuth } from '@/lib/auth-server';
 import { isValidClass } from '@/lib/constants';
 import {
   getQuestionById,
@@ -10,14 +10,14 @@ import { Difficulty, OptionKey } from '@/lib/types';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await getRequestAuth(req);
   if (!auth || auth.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const question = await getQuestionById(params.id);
+  const question = await getQuestionById((await params).id);
   if (!question) {
     return NextResponse.json({ error: 'Question not found' }, { status: 404 });
   }
@@ -26,7 +26,7 @@ export async function GET(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await getRequestAuth(req);
   if (!auth || auth.role !== 'admin') {
@@ -66,7 +66,7 @@ export async function PUT(
       );
     }
 
-    const updated = await updateQuestion(params.id, {
+    const updated = await updateQuestion((await params).id, {
       class: cls,
       subject_tag: subjectTag,
       difficulty,
@@ -99,14 +99,14 @@ export async function PUT(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await getRequestAuth(req);
   if (!auth || auth.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const deleted = await softDeleteQuestion(params.id);
+  const deleted = await softDeleteQuestion((await params).id);
   if (!deleted) {
     return NextResponse.json({ error: 'Question not found.' }, { status: 404 });
   }

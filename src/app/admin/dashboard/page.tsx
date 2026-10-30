@@ -61,7 +61,7 @@ export default function AdminDashboardPage() {
     {
       href: '/admin/questions',
       title: 'Question bank',
-      desc: 'Manage 108+ practical everyday computer MCQs per class or import CSV files.',
+      desc: 'Manage private question banks or import questions from CSV.',
       stat: `${totals?.total_questions ?? '—'} MCQs`,
       Icon: BookOpenText,
     },

@@ -223,8 +223,8 @@ export default function AdminAnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {data.hardest_questions.map((q) => (
-                      <tr key={q.question_id} className="hover:bg-slate-50/60">
+                    {data.hardest_questions.map((q, index) => (
+                      <tr key={`${q.question_id}-${index}`} className="hover:bg-slate-50/60">
                         <td className="px-5 py-3.5 font-mono text-xs font-semibold text-slate-900 whitespace-nowrap tabular-nums">
                           Class {q.class}
                         </td>

@@ -66,25 +66,14 @@ export default function StudentQuestionWiseResultPage() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const { ok, status, data } = await apiFetch<StudentResultPayload>(
-        `/api/quiz/result/${params.attemptId}`
-      );
-      if (!mounted) return;
-      if (status === 401) {
-        clearClientSession();
-        router.replace('/student/login');
-        return;
-      }
-      if (!ok || status === 403) {
-        setLockedMessage(
-          data.error ||
-            'Question-wise results have not been released by your teacher yet.'
-        );
-        setLoading(false);
-        return;
-      }
-      setResultData(data);
-      setLoading(false);
+      try {
+        const { ok, status, data } = await apiFetch<StudentResultPayload>(`/api/quiz/result/${params.attemptId}`);
+        if (!mounted) return;
+        if (status === 401) { clearClientSession(); router.replace('/student/login'); return; }
+        if (!ok) { setLockedMessage(data.error || 'This result is not available.'); return; }
+        setResultData(data);
+      } catch { if (mounted) setLockedMessage('Connection failed. Please return to your dashboard and retry.'); }
+      finally { if (mounted) setLoading(false); }
     })();
     return () => {
       mounted = false;
@@ -118,7 +107,7 @@ export default function StudentQuestionWiseResultPage() {
             <LockSimple size={22} weight="regular" />
           </div>
           <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 tracking-tight">
-            Results not released yet
+            Result unavailable
           </h1>
           <p className="mt-2 text-sm sm:text-base text-slate-600 leading-relaxed">
             {lockedMessage}
@@ -180,7 +169,7 @@ export default function StudentQuestionWiseResultPage() {
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-5 pb-6 border-b border-slate-100">
             <div>
               <p className="font-mono text-xs font-medium text-maple-600 tracking-wider">
-                Question-wise review · Class {attempt.class}
+                Official scorecard · Class {attempt.class}
               </p>
               <h1 className="mt-1.5 text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">
                 {student.full_name}
@@ -189,6 +178,7 @@ export default function StudentQuestionWiseResultPage() {
                 Roll {student.roll_number} · Class {student.class} (
                 {formatSectionDisplay(student.class, student.section)})
               </p>
+              <p className="mt-2 text-xs text-slate-500">Submitted {attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</p>
             </div>
 
             <div className="flex items-baseline gap-4">
@@ -208,7 +198,7 @@ export default function StudentQuestionWiseResultPage() {
                     : 'bg-slate-100 text-slate-700'
                 }`}
               >
-                {attempt.passed ? 'Shortlisted' : 'Open track'}
+                {attempt.passed ? 'Qualified' : 'Not qualified'}
               </span>
             </div>
           </div>
