@@ -13,6 +13,8 @@ The earlier repository was public and included question/answer files, student re
 - retires unfinished legacy papers (they remain in the database but cannot be resumed or consume a new attempt); and
 - preserves historical students, questions, responses and completed results, with best-effort snapshots of the old records.
 
+The obsolete `public.student_attempt_summaries` view is dropped because its owner privileges could bypass callers' RLS. The app obtains summaries through its server instead. If another integration needs a view, design appropriate RLS and grants first and use a `security_invoker` view on PostgreSQL 15+, rather than restoring an owner-privileged public view.
+
 It also replaces policies on the app's tables, enables row-level security and revokes direct anonymous/authenticated access. Review any other integrations that depend on those policies. Reapplying the script does **not** repeat the security cutover or reseed the database. For local development data the app creates a `.pre-security-backup` before a one-time upgrade; protect that file because it can contain sensitive information.
 
 ## Published temporary legacy seed
@@ -24,7 +26,7 @@ To use this temporary bank, apply the complete `supabase/schema.sql` first, then
 ## Production setup
 
 1. Use Node.js 20.9 or later (Node 22 recommended) and run `npm ci`. Provision a Supabase project and back up any existing data.
-2. Apply the complete `supabase/schema.sql` as the database owner using the Supabase SQL editor or your normal migration tooling. Test it against a staging copy first. The no-code registration API requires the updated registration function in this schema; deploy the schema and app together (registration can be unavailable between those steps). Old invite records are preserved but are no longer used. Apply it to each target project; updating a repository alone does not update a hosted database.
+2. Apply the complete `supabase/schema.sql` as the database owner using the Supabase SQL editor or your normal migration tooling. For an existing installation that already has the security schema, apply `supabase/admin-password-migration.sql` before deploying the admin password update. Test it against a staging copy first. The no-code registration API requires the updated registration function in this schema; deploy the schema and app together (registration can be unavailable between those steps). Old invite records are preserved but are no longer used. Apply it to each target project; updating a repository alone does not update a hosted database.
 3. Set these environment variables in the server's secret manager or a gitignored `.env.local` file. See `.env.example`; do not send secrets in chat or put them in client-side `NEXT_PUBLIC_` variables.
 
    - `SUPABASE_URL`: your project URL.
@@ -42,7 +44,7 @@ To use this temporary bank, apply the complete `supabase/schema.sql` first, then
    unset MTC_ADMIN_USERNAME MTC_ADMIN_PASSWORD
    ```
 
-   Use a unique password of at least 12 characters (at most 72 UTF-8 bytes). Set `MTC_ADMIN_FULL_NAME` if desired. Do not put passwords on a command line, in source files, or in shell history. Distribute account credentials through a private channel.
+   Use a unique password of at least 12 characters (at most 72 UTF-8 bytes). Set `MTC_ADMIN_FULL_NAME` if desired. Do not put passwords on a command line, in source files, or in shell history. Distribute account credentials through a private channel. Once signed in, use **Account → Change password** to change your own password. Your current password is required and all your sessions are revoked after the change.
 5. Sign in at `/admin/login`. For each retained student, reset their password in **Students** before reactivating them; activation is rejected until reset. New students can register with their name, school roll number, class, section or stream, and password. Alternatively, a teacher can create a student account directly and share its initial password privately. **Registration no longer verifies identity:** anyone who knows an unused roll number, class and section can claim it. Rate limits do not prevent impersonation. Teachers should verify the roster and deactivate suspicious accounts; restrict access to trusted students or add identity verification before production if needed.
 6. In **Question bank**, add or privately import a replacement bank. The active bank is empty after cutover unless the optional exposed legacy seed has also been run. The CSV importer accepts up to 500 rows per import, with an optional header in this order:
 

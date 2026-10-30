@@ -24,6 +24,46 @@ export async function createSession(userId: string, role: 'admin' | 'student'): 
   return session;
 }
 
+/** Lock the account and ensure the verified hash is still current before creating
+ * a session. This closes the race between sign-in and password rotation. */
+export async function createAdminSession(userId: string, expectedHash: string): Promise<AuthSession | null> {
+  const now = Date.now();
+  const session: AuthSession = { id: crypto.randomUUID(), user_id: userId, role: 'admin', created_at: new Date(now).toISOString(), expires_at: new Date(now + 8 * 60 * 60 * 1000).toISOString(), revoked_at: null };
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabase().rpc('mtc_create_admin_session', {
+      p_admin_id: userId, p_session_id: session.id, p_expected_hash: expectedHash, p_expires_at: session.expires_at,
+    });
+    if (error) throw new Error(error.message);
+    return data === true ? session : null;
+  }
+  const db = readLocalDb();
+  const admin = db.admins.find((a) => a.id === userId && a.is_active && a.password_hash === expectedHash);
+  if (!admin) return null;
+  db.auth_sessions.push(session); writeLocalDb(db);
+  return session;
+}
+
+/** Change the hash only for the still-current admin/session and revoke all admin
+ * sessions atomically. Password comparison happens in the authenticated API. */
+export async function changeAdminPassword(userId: string, sessionId: string, expectedHash: string, newHash: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabase().rpc('mtc_change_admin_password', {
+      p_admin_id: userId, p_session_id: sessionId, p_expected_hash: expectedHash, p_new_hash: newHash,
+    });
+    if (error) throw new Error(error.message);
+    return data === true;
+  }
+  const db = readLocalDb();
+  const admin = db.admins.find((a) => a.id === userId && a.is_active && a.password_hash === expectedHash);
+  const session = db.auth_sessions.find((s) => s.id === sessionId && s.user_id === userId && s.role === 'admin' && !s.revoked_at && new Date(s.expires_at).getTime() > Date.now());
+  if (!admin || !session || !newHash || newHash === expectedHash) return false;
+  admin.password_hash = newHash;
+  const now = new Date().toISOString();
+  for (const s of db.auth_sessions) if (s.user_id === userId && s.role === 'admin' && !s.revoked_at) s.revoked_at = now;
+  writeLocalDb(db);
+  return true;
+}
+
 export async function getSession(id: string): Promise<AuthSession | null> {
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabase().from('auth_sessions').select('*').eq('id', id).maybeSingle();

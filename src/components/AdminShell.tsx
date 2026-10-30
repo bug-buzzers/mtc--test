@@ -11,6 +11,7 @@ import {
   ChartBar,
   ClipboardText,
   GearSix,
+  Key,
   SignOut,
   ShieldWarning,
   SquaresFour,
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { href: '/admin/students', label: 'Students', icon: Users },
   { href: '/admin/integrity', label: 'Integrity', icon: ShieldWarning },
   { href: '/admin/settings', label: 'Settings', icon: GearSix },
+  { href: '/admin/account', label: 'Account', icon: Key },
   { href: '/admin/analytics', label: 'Analytics', icon: ChartBar },
 ];
 

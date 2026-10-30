@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { attachAuthCookie, signAuthToken } from '@/lib/auth';
 import { findAdminByUsername } from '@/lib/db';
-import { consumeRateLimit, createSession } from '@/lib/db/security-store';
+import { consumeRateLimit, createAdminSession } from '@/lib/db/security-store';
 import { AuthTokenPayload } from '@/lib/types';
 
 const dummyHash = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 12);
@@ -18,7 +18,8 @@ export async function POST(req: NextRequest) {
     const admin = await findAdminByUsername(username);
     const valid = await bcrypt.compare(password, admin?.password_hash || dummyHash);
     if (!admin || !admin.is_active || !valid) return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
-    const session = await createSession(admin.id, 'admin');
+    const session = await createAdminSession(admin.id, admin.password_hash);
+    if (!session) return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
     const payload: AuthTokenPayload = { sub: admin.id, sid: session.id, role: 'admin', name: admin.full_name, username: admin.username };
     const token = await signAuthToken(payload);
     const res = NextResponse.json({ message: 'Signed in.', user: { role: 'admin', name: admin.full_name } });
