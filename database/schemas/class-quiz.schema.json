@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mapleskhatauli.com/schemas/mtc-class-quiz.schema.json",
+  "title": "Maples Tech Club (MTC) — Class Quiz Bank Schema",
+  "description": "Schema for each class-level quiz bank (Classes 6 to 12) at Maples Academy, Khatauli. Every class bank MUST contain a minimum of 100 practical, non-syllabus everyday computer literacy MCQs, from which quiz questions are drawn randomly during each test.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "institution",
+    "club",
+    "class",
+    "eligible_sections",
+    "selection_policy",
+    "exam_defaults",
+    "categories",
+    "total_questions_in_bank",
+    "questions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "2.0.0"
+    },
+    "institution": {
+      "type": "string",
+      "minLength": 5
+    },
+    "club": {
+      "type": "string",
+      "minLength": 5
+    },
+    "class": {
+      "type": "integer",
+      "minimum": 6,
+      "maximum": 12
+    },
+    "eligible_sections": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string",
+        "enum": ["A", "B", "Maths", "Bio", "Commerce", "Humanities"]
+      }
+    },
+    "selection_policy": {
+      "type": "object",
+      "required": ["mode", "minimum_bank_size", "syllabus_free"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "random_shuffle_per_attempt"
+        },
+        "minimum_bank_size": {
+          "type": "integer",
+          "minimum": 100
+        },
+        "syllabus_free": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "exam_defaults": {
+      "type": "object",
+      "required": [
+        "total_questions_served",
+        "time_limit_minutes",
+        "passing_score",
+        "max_attempts",
+        "show_results_to_students"
+      ],
+      "properties": {
+        "total_questions_served": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "time_limit_minutes": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 180
+        },
+        "passing_score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "show_results_to_students": {
+          "type": "boolean"
+        }
+      }
+    },
+    "categories": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "string",
+        "enum": [
+          "Keyboard Shortcuts",
+          "Computer Hardware",
+          "Application Software & OS",
+          "Web Browsing & Internet",
+          "Basic Networking & Connectivity",
+          "Social Ethics & Cyber Safety"
+        ]
+      }
+    },
+    "total_questions_in_bank": {
+      "type": "integer",
+      "minimum": 100
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 100,
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "class",
+          "subject_tag",
+          "difficulty",
+          "question_text",
+          "option_a",
+          "option_b",
+          "option_c",
+          "option_d",
+          "correct_option"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^MTC-C(0[6-9]|1[0-2])-Q[0-9]{3}$"
+          },
+          "class": {
+            "type": "integer",
+            "minimum": 6,
+            "maximum": 12
+          },
+          "subject_tag": {
+            "type": "string",
+            "enum": [
+              "Keyboard Shortcuts",
+              "Computer Hardware",
+              "Application Software & OS",
+              "Web Browsing & Internet",
+              "Basic Networking & Connectivity",
+              "Social Ethics & Cyber Safety"
+            ]
+          },
+          "difficulty": {
+            "type": "string",
+            "enum": ["easy", "medium", "hard"]
+          },
+          "question_text": {
+            "type": "string",
+            "minLength": 10
+          },
+          "option_a": { "type": "string", "minLength": 1 },
+          "option_b": { "type": "string", "minLength": 1 },
+          "option_c": { "type": "string", "minLength": 1 },
+          "option_d": { "type": "string", "minLength": 1 },
+          "correct_option": {
+            "type": "string",
+            "enum": ["a", "b", "c", "d"]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
