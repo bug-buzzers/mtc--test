@@ -13,6 +13,8 @@ import {
   CheckCircle,
   Clock,
   ListChecks,
+  LockSimple,
+  Users,
   Play,
   Shuffle,
   SignOut,
@@ -34,33 +36,35 @@ interface QuizStatusResponse {
     time_limit_minutes: number;
     show_results_to_students?: boolean;
     has_active_attempt: boolean;
+    has_blocked_attempt: boolean;
+    blocked_reason: string | null;
     active_attempt_id: string | null;
     can_start_new_attempt: boolean;
     completed_attempts_count: number;
     max_attempts: number;
   };
   history?: StudentAttemptHistoryItem[];
+  classmates?: string[];
 }
 
 export default function StudentDashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [logoutError, setLogoutError] = useState('');
   const [statusData, setStatusData] = useState<QuizStatusResponse | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const { ok, status, data } = await apiFetch<QuizStatusResponse>(
-        '/api/quiz/status'
-      );
-      if (!mounted) return;
-      if (!ok || status === 401 || status === 403 || !data.student) {
-        clearClientSession();
-        router.replace('/student/login');
-        return;
-      }
-      setStatusData(data);
-      setLoading(false);
+      try {
+        const { ok, status, data } = await apiFetch<QuizStatusResponse>('/api/quiz/status');
+        if (!mounted) return;
+        if (status === 401 || status === 403) { clearClientSession(); router.replace('/student/login'); return; }
+        if (!ok || !data.student || !data.exam) throw new Error(data.error || 'Unable to load your dashboard.');
+        setStatusData(data);
+      } catch (error) { if (mounted) setLoadError(error instanceof Error ? error.message : 'Connection failed.'); }
+      finally { if (mounted) setLoading(false); }
     })();
     return () => {
       mounted = false;
@@ -68,10 +72,15 @@ export default function StudentDashboardPage() {
   }, [router]);
 
   const handleLogout = async () => {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
-    clearClientSession();
-    router.push('/student/login');
+    setLogoutError('');
+    try {
+      const response = await apiFetch('/api/auth/logout', { method: 'POST' });
+      if (!response.ok) throw new Error('Sign-out could not be confirmed. Please retry.');
+      clearClientSession(); router.push('/student/login');
+    } catch { setLogoutError('Sign-out could not be confirmed. Check your connection and retry.'); }
   };
+
+  if (loadError) return <main className="flex min-h-[100dvh] items-center justify-center bg-slate-50 p-4"><div role="alert" className="max-w-md rounded-2xl border border-rose-200 bg-white p-7"><h1 className="text-lg font-semibold">Dashboard unavailable</h1><p className="mt-2 text-sm text-slate-600">{loadError}</p><button onClick={() => window.location.reload()} className="mt-5 rounded-xl bg-slate-900 px-4 py-2 text-sm text-white">Retry</button></div></main>;
 
   if (loading || !statusData?.student || !statusData?.exam) {
     return (
@@ -100,7 +109,7 @@ export default function StudentDashboardPage() {
     );
   }
 
-  const { student, exam, history = [] } = statusData;
+  const { student, exam, history = [], classmates = [] } = statusData;
   const completedHistory = history.filter((h) => h.status === 'submitted');
   const latestCompleted = completedHistory[0] || null;
 
@@ -126,6 +135,7 @@ export default function StudentDashboardPage() {
         id="main-content"
         className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8 animate-fade-in"
       >
+        {logoutError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{logoutError}</p>}
         {/* Student Identity Header */}
         <section className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-slate-200/80">
           <div>
@@ -161,7 +171,12 @@ export default function StudentDashboardPage() {
             </span>
           </div>
 
-          {exam.has_active_attempt ? (
+          {exam.has_blocked_attempt ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6">
+              <div className="flex items-center gap-2 text-rose-700"><LockSimple size={19} /><h3 className="text-lg font-semibold">Your exam is locked</h3></div>
+              <p className="mt-2 max-w-[60ch] text-sm leading-6 text-slate-600">An exam interruption was recorded. Your answers are preserved. Please ask your teacher to review and unlock your attempt.</p>
+            </div>
+          ) : exam.has_active_attempt ? (
             <div className="rounded-2xl bg-maple-100/45 border border-maple-200 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
@@ -267,7 +282,7 @@ export default function StudentDashboardPage() {
                     <Shuffle size={16} weight="regular" />
                   </div>
                   <p className="mt-2 font-mono text-xl font-semibold text-slate-900 tabular-nums">
-                    {exam.questions_in_bank || 108} Qs
+                    {exam.questions_in_bank ?? 0} Qs
                   </p>
                 </div>
               </div>
@@ -295,6 +310,16 @@ export default function StudentDashboardPage() {
               </div>
             </div>
           )}
+        </section>
+
+        <section className="rounded-[2rem] border border-slate-200/70 bg-white p-6 sm:p-8 shadow-diffusion">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><div className="flex items-center gap-2 text-slate-900"><Users size={19} className="text-maple-600" /><h2 className="text-lg font-semibold">Your classmates</h2></div>
+              <p className="mt-1 text-sm text-slate-500">Registered students in your class and {student.class >= 11 ? 'stream' : 'section'} only.</p></div>
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">{classmates.length} classmate{classmates.length === 1 ? '' : 's'}</span>
+          </div>
+          {classmates.length ? <ul className="mt-5 flex flex-wrap gap-2">{classmates.map((name, i) => <li key={`${name}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-700">{name}</li>)}</ul> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No classmates have registered in your section yet.</p>}
+          <p className="mt-4 text-xs text-slate-400">Only names are shown; scores, roll numbers and other personal details remain private.</p>
         </section>
 
         {/* Past Quiz Activity (Clean Divide-Y List, No Box Clutter) */}

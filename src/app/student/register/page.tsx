@@ -47,33 +47,34 @@ export default function StudentRegisterPage() {
     }
 
     setLoading(true);
-    const { ok, data } = await apiFetch<{ error?: string }>(
-      '/api/auth/student/register',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          full_name: fullName,
-          roll_number: rollNumber,
-          class: selectedClass,
-          section,
-          password,
-        }),
+    try {
+      const { ok, data } = await apiFetch<{ error?: string }>(
+        '/api/auth/student/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            full_name: fullName,
+            roll_number: rollNumber,
+            class: selectedClass,
+            section,
+            password,
+          }),
+        }
+      );
+
+      if (!ok) {
+        setError(data.error || 'We could not complete registration. Try again.');
+        return;
       }
-    );
-    setLoading(false);
 
-    if (!ok) {
-      setError(data.error || 'We could not complete registration. Try again.');
-      return;
-    }
-
-    const params = new URLSearchParams({
-      registered: '1',
-      roll: rollNumber.trim(),
-      class: String(selectedClass),
-      section,
-    });
-    router.push(`/student/login?${params.toString()}`);
+      const params = new URLSearchParams({
+        registered: '1',
+        roll: rollNumber.trim(),
+        class: String(selectedClass),
+        section,
+      });
+      router.push(`/student/login?${params.toString()}`);
+    } catch { setError('Connection failed. Check your network and try again.'); } finally { setLoading(false); }
   };
 
   const sections = getSectionsForClass(selectedClass);
@@ -102,7 +103,7 @@ export default function StudentRegisterPage() {
               Student registration
             </h1>
             <p className="mt-1.5 text-sm text-slate-500">
-              Register with your school roll number. No email address is needed.
+              Register using your school roll number, class, and section or stream.
             </p>
           </div>
 
@@ -208,8 +209,8 @@ export default function StudentRegisterPage() {
                   id="reg-pass"
                   type="password"
                   required
-                  minLength={4}
-                  placeholder="Min 4 characters"
+                  minLength={10}
+                  placeholder="Min 10 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full min-h-[46px] px-4 py-2.5 rounded-xl border border-slate-300/90 bg-white focus:border-maple-500 outline-none text-sm transition"
@@ -227,7 +228,7 @@ export default function StudentRegisterPage() {
                   id="reg-confirm"
                   type="password"
                   required
-                  minLength={4}
+                  minLength={10}
                   placeholder="Repeat password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}

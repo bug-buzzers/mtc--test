@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRequestAuth } from '@/lib/auth';
+import { getRequestAuth } from '@/lib/auth-server';
 import { getStudentById } from '@/lib/db';
 
 export async function GET(req: NextRequest) {

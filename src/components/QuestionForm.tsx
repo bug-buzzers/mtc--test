@@ -2,9 +2,10 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CLASSES, SUBJECT_TAGS_BY_CLASS } from '@/lib/constants';
+import { CLASSES, SUBJECT_TAGS_BY_CLASS, isValidClass } from '@/lib/constants';
 import { apiFetch } from '@/lib/client-api';
 import { Difficulty, OptionKey, Question } from '@/lib/types';
+import { reviewOptionLengths } from '@/lib/option-length-review';
 import { CheckCircle, FloppyDisk } from '@phosphor-icons/react';
 
 interface QuestionFormProps {
@@ -49,6 +50,17 @@ export default function QuestionForm({
   const [error, setError] = useState('');
 
   const suggestedTags = SUBJECT_TAGS_BY_CLASS[selectedClass] || [];
+  const lengthReview = reviewOptionLengths({ option_a: optionA, option_b: optionB, option_c: optionC, option_d: optionD, correct_option: correctOption });
+
+  const returnUrl = () => {
+    const previous = new URLSearchParams(window.location.search);
+    const previousClass = previous.get('return_class');
+    const returnClass = previousClass === 'all' || (previousClass && isValidClass(Number(previousClass))) ? previousClass : String(selectedClass);
+    const search = new URLSearchParams({ class: returnClass });
+    const previousReview = previous.get('length_review');
+    if (previousReview === 'correct_longest' || previousReview === 'uneven') search.set('length_review', previousReview);
+    return `/admin/questions?${search.toString()}`;
+  };
 
   const handleClassChange = (cls: number) => {
     setSelectedClass(cls);
@@ -81,18 +93,12 @@ export default function QuestionForm({
         : `/api/admin/questions/${initialQuestion?.id}`;
     const method = mode === 'create' ? 'POST' : 'PUT';
 
-    const { ok, data } = await apiFetch<{ error?: string }>(url, {
-      method,
-      body: JSON.stringify(payload),
-    });
-
-    setSaving(false);
-    if (!ok) {
-      setError(data.error || 'We could not save this question.');
-      return;
-    }
-
-    router.push(`/admin/questions?class=${selectedClass}`);
+    try {
+      const { ok, data } = await apiFetch<{ error?: string }>(url, { method, body: JSON.stringify(payload) });
+      if (!ok) { setError(data.error || 'We could not save this question.'); return; }
+      router.push(returnUrl());
+    } catch { setError('Connection failed. The update was not confirmed; please retry.'); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -249,23 +255,32 @@ export default function QuestionForm({
                 {isCorrect ? `${item.label} · Correct` : `Select ${item.label}`}
               </button>
 
-              <input
-                type="text"
-                required
-                placeholder={`Enter ${item.label}`}
-                value={item.val}
-                onChange={(e) => item.set(e.target.value)}
-                className="flex-1 min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm"
-              />
+              <div className="min-w-0 flex-1">
+                <input
+                  type="text"
+                  required
+                  aria-label={item.label}
+                  placeholder={`Enter ${item.label}`}
+                  value={item.val}
+                  onChange={(e) => item.set(e.target.value)}
+                  className="w-full min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm"
+                />
+                <p className="mt-1 text-xs text-slate-500">{lengthReview.counts[item.key].words} words · {lengthReview.counts[item.key].characters} characters</p>
+              </div>
             </div>
           );
         })}
       </div>
 
+      {lengthReview.complete && <div role="status" aria-live="polite" className={`rounded-2xl border p-4 text-sm leading-6 ${lengthReview.correctLongest || lengthReview.uneven ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+        <p className="font-semibold">{lengthReview.correctLongest ? 'The correct answer is among the longest options' : lengthReview.uneven ? 'The option lengths vary considerably' : 'No length clue detected by this check'}</p>
+        <p className="mt-1">Make the incorrect choices plausible and similarly detailed. Keep exactly one correct answer; avoid meaningless filler. This length check is advisory and cannot judge accuracy or fairness.</p>
+      </div>}
+
       <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
         <button
           type="button"
-          onClick={() => router.push('/admin/questions')}
+          onClick={() => router.push(returnUrl())}
           className="min-h-[46px] px-5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 active:scale-[0.98] font-medium text-sm text-slate-700 transition"
         >
           Cancel

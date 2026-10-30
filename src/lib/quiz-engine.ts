@@ -3,7 +3,7 @@ import { Difficulty, Question } from './types';
 
 /**
  * Cryptographically unbiased Fisher-Yates shuffle so every student receives
- * a genuinely random selection and question order from their 100+ class pool.
+ * a genuinely random selection and question order from their private class pool.
  */
 function shuffleArray<T>(items: T[]): T[] {
   const arr = [...items];
@@ -52,7 +52,7 @@ function pickRandomSubjectSpread(pool: Question[], count: number): Question[] {
 }
 
 /**
- * Randomly draws `targetCount` (e.g., 25) questions from the student's 100+ active class quiz pool.
+ * Randomly draws `targetCount` (e.g., 25) questions from the student's active class quiz pool.
  * Prioritizes unseen questions if an admin grants a student an extra attempt, and balances
  * difficulty gently (~40% easy, ~40% medium, ~20% practical everyday awareness).
  */
@@ -107,7 +107,7 @@ export function selectQuizQuestions(
     }
   }
 
-  // Pass 3: Backfill randomly from previously seen questions only if student exhausted the 100+ pool
+  // Pass 3: Backfill randomly from previously seen questions only if student exhausted the unseen pool
   if (chosen.length < count) {
     const remainingUsed = usedPool.filter((q) => !chosenIds.has(q.id));
     const fillUsed = pickRandomSubjectSpread(
