@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { getRequestAuth } from '@/lib/auth';
+import { getRequestAuth } from '@/lib/auth-server';
 import { isValidClass, isValidClassSection } from '@/lib/constants';
 import { createStudent, listStudents } from '@/lib/db';
 
@@ -45,14 +45,14 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    if (password.length < 4) {
+    if (password.length < 10 || Buffer.byteLength(password) > 72) {
       return NextResponse.json(
-        { error: 'Password must be at least 4 characters.' },
+        { error: 'Password must be at least 10 characters and at most 72 bytes.' },
         { status: 400 }
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
     const { student, error } = await createStudent({
       roll_number: rollNumber,
       full_name: fullName,

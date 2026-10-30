@@ -72,7 +72,7 @@ export function isValidClassSection(cls: number, section: string): boolean {
 
 /**
  * Practical, Non-Syllabus Everyday Computer Literacy Topics
- * (100+ questions per class across Classes 6–12, drawn randomly during each test)
+ * (Teachers configure the private class banks used for each test.)
  */
 export const CORE_ENTRANCE_TAGS = [
   'Keyboard Shortcuts',

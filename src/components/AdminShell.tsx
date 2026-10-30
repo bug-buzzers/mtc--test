@@ -12,6 +12,7 @@ import {
   ClipboardText,
   GearSix,
   SignOut,
+  ShieldWarning,
   SquaresFour,
   Users,
 } from '@phosphor-icons/react';
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: '/admin/questions', label: 'Question bank', icon: BookOpenText },
   { href: '/admin/results', label: 'Results & print', icon: ClipboardText },
   { href: '/admin/students', label: 'Students', icon: Users },
+  { href: '/admin/integrity', label: 'Integrity', icon: ShieldWarning },
   { href: '/admin/settings', label: 'Settings', icon: GearSix },
   { href: '/admin/analytics', label: 'Analytics', icon: ChartBar },
 ];
@@ -42,21 +44,20 @@ export default function AdminShell({
   const pathname = usePathname();
   const [adminUser, setAdminUser] = useState<AuthTokenPayload | null>(null);
   const [checking, setChecking] = useState(true);
+  const [authError, setAuthError] = useState('');
+  const [logoutError, setLogoutError] = useState('');
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const { ok, data } = await apiFetch<{ user: AuthTokenPayload | null }>(
-        '/api/auth/me'
-      );
-      if (!mounted) return;
-      if (!ok || !data.user || data.user.role !== 'admin') {
-        clearClientSession();
-        router.replace('/admin/login');
-        return;
-      }
-      setAdminUser(data.user);
-      setChecking(false);
+      try {
+        const { ok, status, data } = await apiFetch<{ user: AuthTokenPayload | null }>('/api/auth/me');
+        if (!mounted) return;
+        if (status === 401 || (ok && (!data.user || data.user.role !== 'admin'))) { clearClientSession(); router.replace('/admin/login'); return; }
+        if (!ok || !data.user) throw new Error('Unable to verify your administrator session.');
+        setAdminUser(data.user);
+      } catch { if (mounted) setAuthError('Unable to verify your session. Check your connection and retry.'); }
+      finally { if (mounted) setChecking(false); }
     })();
     return () => {
       mounted = false;
@@ -64,10 +65,15 @@ export default function AdminShell({
   }, [router]);
 
   const handleLogout = async () => {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
-    clearClientSession();
-    router.push('/admin/login');
+    setLogoutError('');
+    try {
+      const response = await apiFetch('/api/auth/logout', { method: 'POST' });
+      if (!response.ok) throw new Error('Sign-out could not be confirmed.');
+      clearClientSession(); router.push('/admin/login');
+    } catch { setLogoutError('Sign-out could not be confirmed. Check your connection and retry.'); }
   };
+
+  if (authError) return <main className="flex min-h-[100dvh] items-center justify-center bg-slate-50 p-4"><div role="alert" className="max-w-md rounded-2xl border border-rose-200 bg-white p-7"><h1 className="text-lg font-semibold">Coordinator workspace unavailable</h1><p className="mt-2 text-sm text-slate-600">{authError}</p><button onClick={() => window.location.reload()} className="mt-5 rounded-xl bg-slate-900 px-4 py-2 text-sm text-white">Retry</button></div></main>;
 
   if (checking) {
     return (
@@ -148,6 +154,7 @@ export default function AdminShell({
         id="main-content"
         className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-7 sm:py-9 animate-fade-in"
       >
+        {logoutError && <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{logoutError}</p>}
         {(title || actions) && (
           <div className="no-print mb-7 flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-5 border-b border-slate-200/80">
             <div>

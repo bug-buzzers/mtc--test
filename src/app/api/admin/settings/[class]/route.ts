@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRequestAuth } from '@/lib/auth';
+import { getRequestAuth } from '@/lib/auth-server';
 import { isValidClass } from '@/lib/constants';
-import { updateExamConfig } from '@/lib/db';
+import { countQuestions, getExamConfigByClass, updateExamConfig } from '@/lib/db';
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { class: string } }
+  { params }: { params: Promise<{ class: string }> }
 ) {
   const auth = await getRequestAuth(req);
   if (!auth || auth.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const cls = Number(params.class);
+  const cls = Number((await params).class);
   if (!isValidClass(cls)) {
     return NextResponse.json({ error: 'Invalid class number.' }, { status: 400 });
   }
@@ -76,6 +76,15 @@ export async function PUT(
       updates.max_attempts = ma;
     }
 
+    const current = await getExamConfigByClass(cls);
+    const effectiveQuestions = updates.total_questions ?? current.total_questions;
+    const effectivePass = updates.passing_score ?? current.passing_score;
+    if (effectivePass > effectiveQuestions) {
+      return NextResponse.json({ error: 'Passing score cannot exceed total questions.' }, { status: 400 });
+    }
+    if (updates.is_open === true && await countQuestions(cls) < effectiveQuestions) {
+      return NextResponse.json({ error: 'Import enough active private questions before opening this class.' }, { status: 400 });
+    }
     const updated = await updateExamConfig(cls, updates);
     if (!updated) {
       return NextResponse.json(

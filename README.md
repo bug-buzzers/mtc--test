@@ -1,55 +1,73 @@
-# 🍁 Maples Tech Club (MTC) — Digital Entrance Examination System
+# Maples Tech Club exam portal
 
-**Institution:** Maples Academy, Khatauli (District Muzaffarnagar, U.P. – 251201)  
-**Club Motto:** *"Learn it. Build it. Ship it."*  
-**Patron:** The Principal, Maples Academy • **Supervision:** Faculty Advisor & School Coordinator  
+A Next.js exam portal for students in Classes 6–12 and their teachers. Students register using their name, school roll number, class, section and a password. Teachers manage a private question bank, configure exam windows, review interruptions, and publish results. A student's dashboard shows active classmates' **names only**, limited to the same class and section/stream.
 
-A child-friendly, mobile-first, role-isolated digital entrance quiz platform built with **Next.js 14 (App Router)**, **TypeScript**, **Tailwind CSS**, and **PostgreSQL / Supabase** (with an automatic schema-driven local DB fallback for instant Live Preview).
+## Important security cutover
 
----
+The earlier repository was public and included question/answer files, student records and demo credentials. Removing those files from the current checkout **does not remove them from Git history, forks, caches, or copies**. Treat the entire old bank and all previously published credentials as compromised; never reuse them for an exam. Review the exposure of student records and rotate any secrets that were exposed, including JWT or database credentials if applicable.
 
-## 📚 Class Quiz Schema & 100+ Non-Syllabus Practical Quiz Banks (`756` MCQs)
+`supabase/schema.sql` is an idempotent schema and one-time security migration. **Back up the database and rehearse the upgrade on a staging copy before applying it.** On its first application it:
 
-Every class (`Class 6` through `Class 12`) has its own standalone **Class Quiz Schema file** containing **108 everyday practical computer MCQs** (`>= 100` minimum strictly enforced by JSON Schema), with **25 questions chosen randomly** during each student's test:
+- disables existing administrators, students, old questions and active sessions; closes exam windows and hides results;
+- marks old student passwords as requiring reset before reactivation;
+- retires unfinished legacy papers (they remain in the database but cannot be resumed or consume a new attempt); and
+- preserves historical students, questions, responses and completed results, with best-effort snapshots of the old records.
 
-### 1. JSON Schema & Per-Class Quiz DB Files (`database/`)
-- `database/schemas/class-quiz.schema.json` — Formal JSON Schema (`2020-12`) enforcing `minItems: 100` per class, random per-attempt selection policy, section eligibility, and the 6 non-syllabus practical categories.
-- `database/quizzes/class-06.json` — **108 MCQs** (Sections `A`, `B`)
-- `database/quizzes/class-07.json` — **108 MCQs** (Sections `A`, `B`)
-- `database/quizzes/class-08.json` — **108 MCQs** (Sections `A`, `B`)
-- `database/quizzes/class-09.json` — **108 MCQs** (Sections `A`, `B`)
-- `database/quizzes/class-10.json` — **108 MCQs** (Sections `A`, `B`)
-- `database/quizzes/class-11.json` — **108 MCQs** (Streams `Maths`, `Bio`, `Commerce`, `Humanities`)
-- `database/quizzes/class-12.json` — **108 MCQs** (Streams `Maths`, `Bio`, `Commerce`, `Humanities`)
+It also replaces policies on the app's tables, enables row-level security and revokes direct anonymous/authenticated access. Review any other integrations that depend on those policies. Reapplying the script does **not** repeat the security cutover or reseed the database. For local development data the app creates a `.pre-security-backup` before a one-time upgrade; protect that file because it can contain sensitive information.
 
-### 2. Six Practical Everyday Topics (Zero School Syllabus / Zero Coding Required)
-1. **Keyboard Shortcuts** (`Ctrl+C`, `Ctrl+V`, `Ctrl+Z`, `Alt+Tab`, `F5`, `Win+L`, `Ctrl+Shift+T`, etc.)
-2. **Computer Hardware** (Mouse, Keyboard, Monitor, CPU, RAM vs SSD, Pendrive, UPS, HDMI, Printer vs Scanner, etc.)
-3. **Application Software & OS** (Folders, Recycle Bin, `.jpg`/`.mp3`/`.mp4`/`.pdf`/`.zip`, Word/Docs, Excel/Sheets, Slides/Canva, VLC, Task Manager, etc.)
-4. **Web Browsing & Internet** (Chrome/Edge/Firefox vs Search Engines, Tabs, Bookmarks, History, `https://`, Incognito, Google Drive, Email `CC`/`BCC`, QR codes, etc.)
-5. **Basic Networking & Connectivity** (Wi-Fi, Bluetooth, Hotspot, Airplane Mode, Ethernet/LAN, Router vs Modem, Download vs Upload, `Mbps`, etc.)
-6. **Social Ethics & Cyber Safety** (OTP & UPI PIN safety, Strong Passwords & 2FA, Netiquette, Cyberbullying, Asking Photo Permission, Fact-Checking Forwards, Honest AI Use, etc.)
+## Production setup
 
-### 3. PostgreSQL / Supabase SQL Files (`supabase/`)
-- `supabase/schema.sql` — Full PostgreSQL schema including `exam_config.show_results_to_students` + RLS policies.
-- `supabase/quizzes/class_06_quiz.sql` ... `supabase/quizzes/class_12_quiz.sql` — Per-class SQL quiz files (`108` MCQs each).
-- `supabase/seed.sql` — Consolidated master SQL seed (**756 total questions**).
+1. Use Node.js 20.9 or later (Node 22 recommended) and run `npm ci`. Provision a Supabase project and back up any existing data.
+2. Apply the complete `supabase/schema.sql` as the database owner using the Supabase SQL editor or your normal migration tooling. Test it against a staging copy first. The no-code registration API requires the updated registration function in this schema; deploy the schema and app together (registration can be unavailable between those steps). Old invite records are preserved but are no longer used. This repository has **not** applied the migration to your hosted project.
+3. Set these environment variables in the server's secret manager or a gitignored `.env.local` file. See `.env.example`; do not send secrets in chat or put them in client-side `NEXT_PUBLIC_` variables.
 
----
+   - `SUPABASE_URL`: your project URL.
+   - `SUPABASE_SERVICE_ROLE_KEY`: the server-only service-role key; protect it like a database password.
+   - `JWT_SECRET`: a newly generated random secret of at least 32 bytes. For example, generate one locally with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` and store it securely.
 
-## 👁️ Admin-Controlled Question-Wise Student Results
+   Production fails closed without Supabase and a valid JWT secret. Never expose the service-role key to a browser. Use HTTPS and a reverse proxy that sanitizes forwarded host, protocol and IP headers. Configure backups, access controls and monitoring for the hosted database.
+4. Create or rotate an administrator **after** the migration from a trusted shell with the same server-side database environment. This creates the account or updates the named account and revokes its previous sessions. There is no default administrator or password. For example, in Bash:
 
-- By default during an ongoing exam (`show_results_to_students = false`), **zero scores or answers** are sent to student endpoints.
-- In **Admin → Exam Settings (`/admin/settings`)**, the coordinator can toggle **"Student Question-Wise Result"** per class (or click **Release Results (All)**).
-- Once enabled for a class, students can open **`/student/result/[attemptId]`** from their Dashboard or Submitted screen to view their **Score, Percentage, and full Question-by-Question Review** (`Your Answer` vs `Correct Answer`).
+   ```bash
+   read -r -p 'Administrator username: ' MTC_ADMIN_USERNAME
+   read -rs -p 'New administrator password: ' MTC_ADMIN_PASSWORD; printf '\n'
+   export MTC_ADMIN_USERNAME MTC_ADMIN_PASSWORD
+   npm run create-admin
+   unset MTC_ADMIN_USERNAME MTC_ADMIN_PASSWORD
+   ```
 
----
+   Use a unique password of at least 12 characters (at most 72 UTF-8 bytes). Set `MTC_ADMIN_FULL_NAME` if desired. Do not put passwords on a command line, in source files, or in shell history. Distribute account credentials through a private channel.
+5. Sign in at `/admin/login`. For each retained student, reset their password in **Students** before reactivating them; activation is rejected until reset. New students can register with their name, school roll number, class, section or stream, and password. Alternatively, a teacher can create a student account directly and share its initial password privately. **Registration no longer verifies identity:** anyone who knows an unused roll number, class and section can claim it. Rate limits do not prevent impersonation. Teachers should verify the roster and deactivate suspicious accounts; restrict access to trusted students or add identity verification before production if needed.
+6. In **Question bank**, add or privately import a replacement bank. The active bank is empty after cutover. The CSV importer accepts up to 500 rows per import, with an optional header in this order:
 
-## 🔑 Test Credentials
+   ```text
+   class,subject_tag,difficulty,question_text,option_a,option_b,option_c,option_d,correct_option
+   ```
 
-- **Admin Panel (`/admin/login` — hidden from public/student pages):** `admin` / `Maples@2026`
-- **Sample Students (`/student/login` — Password: `student123`):**
-  - Ready to take quiz: Roll `601` (`6-A`), Roll `802` (`8-B`), Roll `1101` (`11-Maths`)
-  - Sample completed attempts (test Question-Wise Result view after toggling ON in Admin Settings!): Roll `602` (`6-B`), Roll `801` (`8-A`), Roll `13` (`12-Maths`, Harsh), Roll `14` (`12-Maths`, Vidhan)
-# mtc-test
-# mtc-test
+   Classes are 6–12; difficulty is `easy`, `medium` or `hard`; correct option is `a`, `b`, `c` or `d`. Quote fields containing commas and escape quotes by doubling them. Each question must occupy one line. Keep source CSV files and answer keys in private storage, never in this repository. Staff can search, filter, sort, edit, deactivate and page through the bank.
+
+   After importing, review the reported option-length counts. In **Length review**, choose **Correct answer among longest** to find questions where the correct option is longest by words or characters, including ties when some options are shorter. **Uneven option lengths** finds substantial length differences regardless of the key. The filters scan the full active private bank before pagination (large Supabase banks may take longer); other filters still apply. Open a question to see live word and character counts. Rewrite incorrect options to be plausible and similarly detailed without changing the intended correct answer, then verify the whole question for subject accuracy. These checks are advisory, use approximate word/character counts and do not automatically rewrite or establish fairness. Existing exam snapshots are not changed.
+7. Configure each class's question count, passing score, duration and attempt limit in **Settings**. Each active bank must have at least as many questions as the configured paper. Open a class's exam window only when it is ready. Settings and question wording/options/keys are snapshotted when a paper starts, so later edits do not change an existing paper or its grade.
+8. Review locked attempts under **Integrity** and unlock only after checking the circumstances. Students must resume promptly after unlock; their preserved remaining time is restored with at least one minute to reconnect. Publish class results from **Settings** only after that class has finished: publishing makes the scorecard, selected answers and correct answers visible to students. Results can be hidden again.
+
+## Exam behavior and limitations
+
+- Students must acknowledge the rules and enter full screen from a button click. The first detected tab switch warns; another tab switch, a detected full-screen exit or a reported quit locks the attempt. A missed heartbeat for more than 60 seconds before the deadline also locks it. An administrator can review and unlock. Browser focus changes caused by phone calls, accessibility tools, connection loss, crashes or other interruptions can create false positives.
+- A web page **cannot make an exam cheat-proof**, prevent every exit, detect another device, or guarantee a notification when a tab/browser/device closes or the network fails. Close/refresh detection uses best-effort browser events and a beacon; the heartbeat is a fallback, not proof of misconduct. At the end of an exam, a missed quit report may not result in a lock. Schools should combine this system with appropriate supervision and accessible accommodations.
+- The server deadline is authoritative. Answers can be submitted for a 30-second grace period after it; after that, saved answers are graded. Expired/abandoned attempts are checked on subsequent relevant requests (including the integrity/results pages); there is no background scheduler. A disconnected attempt may instead lock for review. The UI reports an unconfirmed submission and allows a retry instead of claiming success.
+- Results remain hidden until a teacher publishes them. Publishing exposes the question-by-question answer key, so do not publish while other students are still taking that paper.
+- Cookies are HttpOnly and sessions are revocable; state-changing API requests require a matching Origin. Login and registration are rate-limited. Maintain a trusted reverse proxy and regularly update dependencies and secrets. Browser-side protections are not a substitute for independent security review.
+
+## Local development and verification
+
+For disposable, single-process development only, set `MTC_ALLOW_LOCAL_DEV=true` and a strong `JWT_SECRET` in `.env.local`, leave the Supabase variables blank, and run `npm run create-admin` as above followed by `npm run dev`. The empty local JSON database is created under gitignored `data/`. It is **not** suitable for production, multiple processes, or durable concurrent writes. Import your own private test questions; no live question bank or demo credentials are bundled.
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npm audit
+```
+
+The automated suite exercises authentication and registration without codes, question pagination, result gating and ownership, browser UI interruption/submit handling, and PostgreSQL functions and legacy migration using PGlite. PGlite and local UI simulations do not replace testing against a real Supabase/PostgREST deployment, multiple database connections, or the specific browsers and devices the school will use. Test these and rehearse restoration before a real examination.

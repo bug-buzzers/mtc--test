@@ -33,8 +33,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['var(--font-outfit)', 'Outfit', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['var(--font-mono)', 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        sans: ['Outfit Variable', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['JetBrains Mono Variable', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       boxShadow: {
         diffusion: '0 20px 40px -15px rgba(15, 23, 42, 0.05)',

@@ -1,44 +1,21 @@
 import crypto from 'crypto';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { CLASSES } from '../constants';
 import {
   Admin,
   Difficulty,
   ExamConfig,
-  OptionKey,
   Question,
+  QuestionSnapshot,
   QuizAttempt,
   QuizResponse,
   Student,
 } from '../types';
 import { readLocalDb, writeLocalDb } from './local-store';
 
-let cachedSupabase: SupabaseClient | null = null;
-
-export function isSupabaseConfigured(): boolean {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return Boolean(
-    url &&
-      key &&
-      url.startsWith('http') &&
-      !url.includes('your-project-id') &&
-      key !== 'your-supabase-service-role-key'
-  );
-}
-
-function getSupabase(): SupabaseClient {
-  if (!cachedSupabase) {
-    cachedSupabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: { persistSession: false, autoRefreshToken: false },
-      }
-    );
-  }
-  return cachedSupabase;
-}
+import { getAllRows, getSupabase, isSupabaseConfigured } from './connection';
+import { maintainAttempt, maintainAllAttempts } from './exam-store';
+import { registerStudent, StudentAlreadyRegisteredError } from './security-store';
+export { isSupabaseConfigured } from './connection';
 
 // =============================================================================
 // STUDENTS & ADMINS
@@ -94,58 +71,12 @@ export async function createStudent(input: {
   section: string;
   password_hash: string;
 }): Promise<{ student?: Student; error?: string }> {
-  const cleanRoll = input.roll_number.trim();
-  const cleanName = input.full_name.trim();
-
-  const existing = await findStudentByCredentials(
-    cleanRoll,
-    input.class,
-    input.section
-  );
-  if (existing) {
-    return {
-      error: 'This student is already registered for this Class & Section. Please log in.',
-    };
+  try {
+    return { student: await registerStudent(input) };
+  } catch (error) {
+    if (error instanceof StudentAlreadyRegisteredError) return { error: 'This student is already registered for this Class & Section. Please log in.' };
+    throw error;
   }
-
-  if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabase()
-      .from('students')
-      .insert({
-        roll_number: cleanRoll,
-        full_name: cleanName,
-        class: input.class,
-        section: input.section,
-        password_hash: input.password_hash,
-        is_active: true,
-        extra_attempts: 0,
-      })
-      .select('*')
-      .single();
-
-    if (error || !data) {
-      return { error: error?.message || 'Could not create student account.' };
-    }
-    return { student: data as Student };
-  }
-
-  const db = readLocalDb();
-  const now = new Date().toISOString();
-  const student: Student = {
-    id: crypto.randomUUID(),
-    roll_number: cleanRoll,
-    full_name: cleanName,
-    class: input.class,
-    section: input.section,
-    password_hash: input.password_hash,
-    is_active: true,
-    extra_attempts: 0,
-    created_at: now,
-    updated_at: now,
-  };
-  db.students.push(student);
-  writeLocalDb(db);
-  return { student };
 }
 
 export async function listStudents(filters?: {
@@ -157,21 +88,10 @@ export async function listStudents(filters?: {
   let attempts: QuizAttempt[] = [];
 
   if (isSupabaseConfigured()) {
-    let q = getSupabase()
-      .from('students')
-      .select('*')
-      .order('class', { ascending: true })
-      .order('section', { ascending: true })
-      .order('roll_number', { ascending: true });
-    if (filters?.class) q = q.eq('class', filters.class);
-    if (filters?.section) q = q.eq('section', filters.section);
-    const { data } = await q;
-    students = (data || []) as Student[];
-
-    const { data: attData } = await getSupabase()
-      .from('quiz_attempts')
-      .select('*');
-    attempts = (attData || []) as QuizAttempt[];
+    [students, attempts] = await Promise.all([getAllRows<Student>('students'), getAllRows<QuizAttempt>('quiz_attempts')]);
+    if (filters?.class) students = students.filter((s) => s.class === filters.class);
+    if (filters?.section) students = students.filter((s) => s.section === filters.section);
+    students.sort((a, b) => a.class - b.class || a.section.localeCompare(b.section) || a.roll_number.localeCompare(b.roll_number));
   } else {
     const db = readLocalDb();
     students = [...db.students];
@@ -201,6 +121,7 @@ export async function listStudents(filters?: {
 
   const countMap = new Map<string, number>();
   for (const att of attempts) {
+    if (att.status !== 'submitted' && att.status !== 'graded') continue;
     countMap.set(att.student_id, (countMap.get(att.student_id) || 0) + 1);
   }
 
@@ -215,6 +136,7 @@ export async function updateStudent(
   updates: {
     full_name?: string;
     is_active?: boolean;
+    password_reset_required?: boolean;
     password_hash?: string;
     extra_attempts?: number;
   }
@@ -354,21 +276,25 @@ export async function listQuestions(filters?: {
   let list: Question[] = [];
 
   if (isSupabaseConfigured()) {
-    let q = getSupabase()
-      .from('questions')
-      .select('*')
-      .order('class', { ascending: true })
-      .order('created_at', { ascending: false });
-    if (!filters?.include_inactive) q = q.eq('is_active', true);
-    if (filters?.class) q = q.eq('class', filters.class);
-    if (filters?.difficulty) q = q.eq('difficulty', filters.difficulty);
-    if (filters?.subject_tag) q = q.eq('subject_tag', filters.subject_tag);
-    const { data } = await q;
-    list = (data || []) as Question[];
+    // PostgREST defaults to a maximum of 1,000 rows per response. Walk the
+    // complete private pool so random papers are not biased to its first page.
+    for (let offset = 0; ; ) {
+      let q = getSupabase().from('questions').select('*', { count: 'exact' }).order('class').order('created_at', { ascending: false }).order('id').range(offset, offset + 999);
+      if (!filters?.include_inactive) q = q.eq('is_active', true).gte('bank_generation', 2);
+      if (filters?.class) q = q.eq('class', filters.class);
+      if (filters?.difficulty) q = q.eq('difficulty', filters.difficulty);
+      if (filters?.subject_tag) q = q.eq('subject_tag', filters.subject_tag);
+      const { data, error, count } = await q;
+      if (error) throw new Error(error.message);
+      if (!data?.length) break;
+      list.push(...data as Question[]);
+      offset += data.length;
+      if (count !== null && offset >= count) break;
+    }
   } else {
     const db = readLocalDb();
     list = db.questions.filter((q) =>
-      filters?.include_inactive ? true : q.is_active
+      filters?.include_inactive ? true : q.is_active && q.bank_generation !== 1
     );
     if (filters?.class) list = list.filter((q) => q.class === filters.class);
     if (filters?.difficulty) {
@@ -389,6 +315,15 @@ export async function listQuestions(filters?: {
   }
 
   return list;
+}
+
+export async function countQuestions(cls: number): Promise<number> {
+  if (isSupabaseConfigured()) {
+    const { count, error } = await getSupabase().from('questions').select('id', { count: 'exact', head: true }).eq('is_active', true).gte('bank_generation', 2).eq('class', cls);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  }
+  return (await listQuestions({ class: cls })).length;
 }
 
 export async function getQuestionById(id: string): Promise<Question | null> {
@@ -422,7 +357,8 @@ export async function createQuestion(
 
   const db = readLocalDb();
   const now = new Date().toISOString();
-  const created: Question = {
+  const created: Question & { bank_generation: number } = {
+    bank_generation: 2,
     id: crypto.randomUUID(),
     ...input,
     is_active: true,
@@ -450,7 +386,8 @@ export async function bulkCreateQuestions(
 
   const db = readLocalDb();
   const now = new Date().toISOString();
-  const created: Question[] = inputs.map((item) => ({
+  const created: Array<Question & { bank_generation: number }> = inputs.map((item) => ({
+    bank_generation: 2,
     id: crypto.randomUUID(),
     ...item,
     is_active: true,
@@ -501,347 +438,48 @@ export async function softDeleteQuestion(id: string): Promise<boolean> {
 // =============================================================================
 
 export async function getStudentAttempts(studentId: string): Promise<QuizAttempt[]> {
-  let attempts: QuizAttempt[] = [];
+  let attempts: QuizAttempt[];
   if (isSupabaseConfigured()) {
-    const { data } = await getSupabase()
-      .from('quiz_attempts')
-      .select('*')
-      .eq('student_id', studentId)
-      .order('started_at', { ascending: false });
+    const { data, error } = await getSupabase().from('quiz_attempts').select('*').eq('student_id', studentId).order('started_at', { ascending: false });
+    if (error) throw new Error(error.message);
     attempts = (data || []) as QuizAttempt[];
   } else {
-    const db = readLocalDb();
-    attempts = db.quiz_attempts
-      .filter((a) => a.student_id === studentId)
-      .sort(
-        (a, b) =>
-          new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
-      );
+    attempts = readLocalDb().quiz_attempts.filter((a) => a.student_id === studentId).sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
   }
-
-  // Auto-grade any stale in_progress attempt whose timer already expired
-  const result: QuizAttempt[] = [];
-  for (const att of attempts) {
-    if (att.status === 'in_progress') {
-      const cfg = await getExamConfigByClass(att.class);
-      const deadlineMs =
-        new Date(att.started_at).getTime() +
-        cfg.time_limit_minutes * 60 * 1000 +
-        15000;
-      if (Date.now() > deadlineMs) {
-        const graded = await gradeAndSubmitAttempt(att.id, cfg.passing_score);
-        result.push(graded || att);
-        continue;
-      }
-    }
-    result.push(att);
-  }
-
-  return result;
+  return Promise.all(attempts.map((a) => a.status === 'in_progress' ? maintainAttempt(a.id, studentId) : a));
 }
 
 export async function getAttemptById(attemptId: string): Promise<QuizAttempt | null> {
   if (isSupabaseConfigured()) {
-    const { data } = await getSupabase()
-      .from('quiz_attempts')
-      .select('*')
-      .eq('id', attemptId)
-      .maybeSingle();
-    return (data as QuizAttempt) || null;
+    const { data, error } = await getSupabase().from('quiz_attempts').select('*').eq('id', attemptId).maybeSingle();
+    if (error) throw new Error(error.message);
+    return data as QuizAttempt | null;
   }
-  const db = readLocalDb();
-  return db.quiz_attempts.find((a) => a.id === attemptId) || null;
+  return readLocalDb().quiz_attempts.find((a) => a.id === attemptId) || null;
 }
 
-export async function getResponsesByAttemptId(
-  attemptId: string
-): Promise<QuizResponse[]> {
+export async function getResponsesByAttemptId(attemptId: string): Promise<QuizResponse[]> {
   if (isSupabaseConfigured()) {
-    const { data } = await getSupabase()
-      .from('quiz_responses')
-      .select('*')
-      .eq('attempt_id', attemptId)
-      .order('question_order', { ascending: true });
+    const { data, error } = await getSupabase().from('quiz_responses').select('*').eq('attempt_id', attemptId).order('question_order', { ascending: true });
+    if (error) throw new Error(error.message);
     return (data || []) as QuizResponse[];
   }
-  const db = readLocalDb();
-  return db.quiz_responses
-    .filter((r) => r.attempt_id === attemptId)
-    .sort((a, b) => a.question_order - b.question_order);
+  return readLocalDb().quiz_responses.filter((r) => r.attempt_id === attemptId).sort((a, b) => a.question_order - b.question_order);
 }
 
-export async function getStudentAnsweredQuestionIds(
-  studentId: string
-): Promise<Set<string>> {
+export async function getStudentAnsweredQuestionIds(studentId: string): Promise<Set<string>> {
   if (isSupabaseConfigured()) {
-    const { data: attempts } = await getSupabase()
-      .from('quiz_attempts')
-      .select('id')
-      .eq('student_id', studentId);
+    const { data: attempts, error: aError } = await getSupabase().from('quiz_attempts').select('id').eq('student_id', studentId);
+    if (aError) throw new Error(aError.message);
     const ids = (attempts || []).map((a: { id: string }) => a.id);
-    if (ids.length === 0) return new Set();
-    const { data: resps } = await getSupabase()
-      .from('quiz_responses')
-      .select('question_id')
-      .in('attempt_id', ids);
-    return new Set((resps || []).map((r: { question_id: string }) => r.question_id));
+    if (!ids.length) return new Set();
+    const { data, error } = await getSupabase().from('quiz_responses').select('question_id').in('attempt_id', ids);
+    if (error) throw new Error(error.message);
+    return new Set((data || []).map((r: { question_id: string }) => r.question_id));
   }
-
   const db = readLocalDb();
-  const attemptIds = new Set(
-    db.quiz_attempts
-      .filter((a) => a.student_id === studentId)
-      .map((a) => a.id)
-  );
-  const questionIds = new Set<string>();
-  for (const r of db.quiz_responses) {
-    if (attemptIds.has(r.attempt_id)) {
-      questionIds.add(r.question_id);
-    }
-  }
-  return questionIds;
-}
-
-export async function createQuizAttemptWithResponses(
-  studentId: string,
-  cls: number,
-  selectedQuestions: Question[]
-): Promise<{ attempt: QuizAttempt; responses: QuizResponse[] }> {
-  const now = new Date().toISOString();
-
-  if (isSupabaseConfigured()) {
-    const { data: attData, error: attErr } = await getSupabase()
-      .from('quiz_attempts')
-      .insert({
-        student_id: studentId,
-        class: cls,
-        started_at: now,
-        total_questions: selectedQuestions.length,
-        status: 'in_progress',
-      })
-      .select('*')
-      .single();
-    if (attErr || !attData) {
-      throw new Error(attErr?.message || 'Failed to start quiz attempt');
-    }
-
-    const responseRows = selectedQuestions.map((q, idx) => ({
-      attempt_id: attData.id,
-      question_id: q.id,
-      question_order: idx + 1,
-      selected_option: null,
-      is_correct: null,
-    }));
-
-    const { data: respData, error: respErr } = await getSupabase()
-      .from('quiz_responses')
-      .insert(responseRows)
-      .select('*');
-    if (respErr || !respData) {
-      throw new Error(respErr?.message || 'Failed to create quiz responses');
-    }
-
-    return {
-      attempt: attData as QuizAttempt,
-      responses: (respData as QuizResponse[]).sort(
-        (a, b) => a.question_order - b.question_order
-      ),
-    };
-  }
-
-  const db = readLocalDb();
-  const attempt: QuizAttempt = {
-    id: crypto.randomUUID(),
-    student_id: studentId,
-    class: cls,
-    started_at: now,
-    submitted_at: null,
-    total_questions: selectedQuestions.length,
-    correct_count: null,
-    score_percentage: null,
-    passed: null,
-    status: 'in_progress',
-  };
-  const responses: QuizResponse[] = selectedQuestions.map((q, idx) => ({
-    id: crypto.randomUUID(),
-    attempt_id: attempt.id,
-    question_id: q.id,
-    question_order: idx + 1,
-    selected_option: null,
-    is_correct: null,
-  }));
-
-  db.quiz_attempts.push(attempt);
-  db.quiz_responses.push(...responses);
-  writeLocalDb(db);
-
-  return { attempt, responses };
-}
-
-export async function saveDraftResponses(
-  attemptId: string,
-  updates: Array<{ response_id: string; selected_option: OptionKey | null }>
-): Promise<void> {
-  const validOpts = new Set(['a', 'b', 'c', 'd']);
-  if (isSupabaseConfigured()) {
-    for (const item of updates) {
-      const opt =
-        item.selected_option && validOpts.has(item.selected_option)
-          ? item.selected_option
-          : null;
-      await getSupabase()
-        .from('quiz_responses')
-        .update({ selected_option: opt })
-        .eq('id', item.response_id)
-        .eq('attempt_id', attemptId);
-    }
-    return;
-  }
-
-  const db = readLocalDb();
-  const map = new Map<string, OptionKey | null>();
-  for (const u of updates) {
-    map.set(
-      u.response_id,
-      u.selected_option && validOpts.has(u.selected_option)
-        ? u.selected_option
-        : null
-    );
-  }
-  for (const r of db.quiz_responses) {
-    if (r.attempt_id === attemptId && map.has(r.id)) {
-      r.selected_option = map.get(r.id)!;
-    }
-  }
-  writeLocalDb(db);
-}
-
-export async function gradeAndSubmitAttempt(
-  attemptId: string,
-  passingScore: number,
-  submittedResponses?: Array<{
-    response_id: string;
-    selected_option: OptionKey | null;
-  }>
-): Promise<QuizAttempt | null> {
-  const validOpts = new Set(['a', 'b', 'c', 'd']);
-
-  if (isSupabaseConfigured()) {
-    const attempt = await getAttemptById(attemptId);
-    if (!attempt) return null;
-    if (attempt.status !== 'in_progress') return attempt;
-
-    const existingResponses = await getResponsesByAttemptId(attemptId);
-    const qIds = existingResponses.map((r) => r.question_id);
-    const { data: qRows } = await getSupabase()
-      .from('questions')
-      .select('id, correct_option')
-      .in('id', qIds);
-    const answerKey = new Map<string, OptionKey>(
-      (qRows || []).map((q: { id: string; correct_option: OptionKey }) => [
-        q.id,
-        q.correct_option,
-      ])
-    );
-
-    const submittedMap = new Map<string, OptionKey | null>();
-    if (submittedResponses) {
-      for (const s of submittedResponses) {
-        submittedMap.set(
-          s.response_id,
-          s.selected_option && validOpts.has(s.selected_option)
-            ? s.selected_option
-            : null
-        );
-      }
-    }
-
-    let correctCount = 0;
-    for (const r of existingResponses) {
-      const selected = submittedMap.has(r.id)
-        ? submittedMap.get(r.id)!
-        : r.selected_option;
-      const correctOpt = answerKey.get(r.question_id);
-      const isCorrect = Boolean(selected && correctOpt && selected === correctOpt);
-      if (isCorrect) correctCount++;
-
-      await getSupabase()
-        .from('quiz_responses')
-        .update({ selected_option: selected, is_correct: isCorrect })
-        .eq('id', r.id);
-    }
-
-    const total = existingResponses.length || attempt.total_questions || 1;
-    const pct = Number(((correctCount / total) * 100).toFixed(2));
-    const passed = correctCount >= passingScore;
-
-    const { data: updated } = await getSupabase()
-      .from('quiz_attempts')
-      .update({
-        submitted_at: new Date().toISOString(),
-        correct_count: correctCount,
-        score_percentage: pct,
-        passed,
-        status: 'graded',
-      })
-      .eq('id', attemptId)
-      .select('*')
-      .single();
-
-    return (updated as QuizAttempt) || null;
-  }
-
-  const db = readLocalDb();
-  const attIdx = db.quiz_attempts.findIndex((a) => a.id === attemptId);
-  if (attIdx === -1) return null;
-  if (db.quiz_attempts[attIdx].status !== 'in_progress') {
-    return db.quiz_attempts[attIdx];
-  }
-
-  const questionMap = new Map<string, Question>(
-    db.questions.map((q) => [q.id, q])
-  );
-  const submittedMap = new Map<string, OptionKey | null>();
-  if (submittedResponses) {
-    for (const s of submittedResponses) {
-      submittedMap.set(
-        s.response_id,
-        s.selected_option && validOpts.has(s.selected_option)
-          ? s.selected_option
-          : null
-      );
-    }
-  }
-
-  let correctCount = 0;
-  let totalServed = 0;
-  for (const r of db.quiz_responses) {
-    if (r.attempt_id !== attemptId) continue;
-    totalServed++;
-    const chosen = submittedMap.has(r.id)
-      ? submittedMap.get(r.id)!
-      : r.selected_option;
-    const q = questionMap.get(r.question_id);
-    const isCorrect = Boolean(chosen && q && chosen === q.correct_option);
-    r.selected_option = chosen;
-    r.is_correct = isCorrect;
-    if (isCorrect) correctCount++;
-  }
-
-  const denom = totalServed || db.quiz_attempts[attIdx].total_questions || 1;
-  const pct = Number(((correctCount / denom) * 100).toFixed(2));
-
-  db.quiz_attempts[attIdx] = {
-    ...db.quiz_attempts[attIdx],
-    submitted_at: new Date().toISOString(),
-    correct_count: correctCount,
-    score_percentage: pct,
-    passed: correctCount >= passingScore,
-    status: 'graded',
-  };
-
-  writeLocalDb(db);
-  return db.quiz_attempts[attIdx];
+  const ids = new Set(db.quiz_attempts.filter((a) => a.student_id === studentId).map((a) => a.id));
+  return new Set(db.quiz_responses.filter((r) => ids.has(r.attempt_id)).map((r) => r.question_id));
 }
 
 // =============================================================================
@@ -871,23 +509,17 @@ export async function listResultsWithDetails(filters?: {
   status?: 'all' | 'passed' | 'failed';
   search?: string;
 }): Promise<ResultRow[]> {
+  await maintainAllAttempts();
   let attempts: QuizAttempt[] = [];
   let students: Student[] = [];
 
   if (isSupabaseConfigured()) {
-    const { data: attData } = await getSupabase()
-      .from('quiz_attempts')
-      .select('*')
-      .neq('status', 'in_progress')
-      .order('submitted_at', { ascending: false });
-    attempts = (attData || []) as QuizAttempt[];
-
-    const { data: stuData } = await getSupabase().from('students').select('*');
-    students = (stuData || []) as Student[];
+    [attempts, students] = await Promise.all([getAllRows<QuizAttempt>('quiz_attempts'), getAllRows<Student>('students')]);
+    attempts = attempts.filter((a) => a.status === 'submitted' || a.status === 'graded').sort((a, b) => new Date(b.submitted_at || b.started_at).getTime() - new Date(a.submitted_at || a.started_at).getTime());
   } else {
     const db = readLocalDb();
     attempts = db.quiz_attempts
-      .filter((a) => a.status !== 'in_progress')
+      .filter((a) => a.status === 'submitted' || a.status === 'graded')
       .sort(
         (a, b) =>
           new Date(b.submitted_at || b.started_at).getTime() -
@@ -980,7 +612,7 @@ export async function getDetailedAttemptReview(attemptId: string) {
   const qMap = new Map(questions.map((q) => [q.id, q]));
 
   const items = responses.map((r, index) => {
-    const q = qMap.get(r.question_id);
+    const q = r.question_snapshot || qMap.get(r.question_id);
     return {
       question_number: r.question_order || index + 1,
       question_id: r.question_id,
@@ -1011,6 +643,7 @@ export async function getDetailedAttemptReview(attemptId: string) {
 }
 
 export async function getAnalyticsSummary() {
+  await maintainAllAttempts();
   let students: Student[] = [];
   let questions: Question[] = [];
   let attempts: QuizAttempt[] = [];
@@ -1018,18 +651,10 @@ export async function getAnalyticsSummary() {
   let configs: ExamConfig[] = [];
 
   if (isSupabaseConfigured()) {
-    const [sRes, qRes, aRes, rRes, cRes] = await Promise.all([
-      getSupabase().from('students').select('*'),
-      getSupabase().from('questions').select('*'),
-      getSupabase().from('quiz_attempts').select('*'),
-      getSupabase().from('quiz_responses').select('*'),
-      getSupabase().from('exam_config').select('*'),
+    [students, questions, attempts, responses, configs] = await Promise.all([
+      getAllRows<Student>('students'), getAllRows<Question>('questions'), getAllRows<QuizAttempt>('quiz_attempts'),
+      getAllRows<QuizResponse>('quiz_responses'), getAllRows<ExamConfig>('exam_config'),
     ]);
-    students = (sRes.data || []) as Student[];
-    questions = (qRes.data || []) as Question[];
-    attempts = (aRes.data || []) as QuizAttempt[];
-    responses = (rRes.data || []) as QuizResponse[];
-    configs = (cRes.data || []) as ExamConfig[];
   } else {
     const db = readLocalDb();
     students = db.students;
@@ -1040,8 +665,8 @@ export async function getAnalyticsSummary() {
   }
 
   const activeQuestions = questions.filter((q) => q.is_active);
-  const completedAttempts = attempts.filter((a) => a.status !== 'in_progress');
-  const inProgressAttempts = attempts.filter((a) => a.status === 'in_progress');
+  const completedAttempts = attempts.filter((a) => a.status === 'submitted' || a.status === 'graded');
+  const inProgressAttempts = attempts.filter((a) => a.status === 'in_progress' || a.status === 'blocked');
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const submittedToday = completedAttempts.filter((a) =>
@@ -1072,8 +697,8 @@ export async function getAnalyticsSummary() {
       : 0;
 
   const completionRate =
-    attempts.length > 0
-      ? Math.round((completedAttempts.length / attempts.length) * 100)
+    completedAttempts.length + inProgressAttempts.length > 0
+      ? Math.round((completedAttempts.length / (completedAttempts.length + inProgressAttempts.length)) * 100)
       : 100;
 
   const classBreakdown = CLASSES.map((cls) => {
@@ -1117,63 +742,31 @@ export async function getAnalyticsSummary() {
     };
   });
 
-  // Question-wise accuracy & most common wrong option analysis
-  const completedAttemptIds = new Set(completedAttempts.map((a) => a.id));
-  const qStats = new Map<
-    string,
-    {
-      total: number;
-      correct: number;
-      wrongCounts: Record<string, number>;
-    }
-  >();
-
-  for (const r of responses) {
-    if (!completedAttemptIds.has(r.attempt_id)) continue;
-    if (!qStats.has(r.question_id)) {
-      qStats.set(r.question_id, { total: 0, correct: 0, wrongCounts: {} });
-    }
-    const st = qStats.get(r.question_id)!;
-    st.total++;
-    if (r.is_correct) {
-      st.correct++;
-    } else if (r.selected_option) {
-      st.wrongCounts[r.selected_option] =
-        (st.wrongCounts[r.selected_option] || 0) + 1;
-    }
-  }
-
+  // Group by the actual question version presented to students. Edits after
+  // an attempt must not rewrite the wording or key shown by analytics.
+  const completedById = new Map(completedAttempts.map((a) => [a.id, a]));
   const qMap = new Map(questions.map((q) => [q.id, q]));
-  const questionAccuracy = Array.from(qStats.entries())
-    .map(([qId, st]) => {
-      const q = qMap.get(qId);
-      if (!q || st.total === 0) return null;
-      let mostCommonWrong: string | null = null;
-      let maxWrong = 0;
-      for (const [opt, cnt] of Object.entries(st.wrongCounts)) {
-        if (cnt > maxWrong) {
-          maxWrong = cnt;
-          mostCommonWrong = opt;
-        }
-      }
-      return {
-        question_id: q.id,
-        class: q.class,
-        subject_tag: q.subject_tag,
-        difficulty: q.difficulty,
-        question_text: q.question_text,
-        correct_option: q.correct_option,
-        attempts: st.total,
-        correct: st.correct,
-        accuracy_pct: Math.round((st.correct / st.total) * 100),
-        most_common_wrong_option: mostCommonWrong,
-        most_common_wrong_text: mostCommonWrong
-          ? (q[`option_${mostCommonWrong}` as keyof Question] as string)
-          : null,
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => Boolean(x))
-    .sort((a, b) => a.accuracy_pct - b.accuracy_pct || b.attempts - a.attempts);
+  const qStats = new Map<string, { id: string; cls: number; snapshot: QuestionSnapshot; total: number; correct: number; wrongCounts: Record<string, number> }>();
+  for (const r of responses) {
+    const attempt = completedById.get(r.attempt_id);
+    const source = r.question_snapshot || qMap.get(r.question_id);
+    if (!attempt || !source) continue;
+    const snapshot: QuestionSnapshot = { subject_tag: source.subject_tag, difficulty: source.difficulty, question_text: source.question_text,
+      option_a: source.option_a, option_b: source.option_b, option_c: source.option_c, option_d: source.option_d, correct_option: source.correct_option };
+    const version = JSON.stringify([r.question_id, snapshot]);
+    if (!qStats.has(version)) qStats.set(version, { id: r.question_id, cls: attempt.class, snapshot, total: 0, correct: 0, wrongCounts: {} });
+    const st = qStats.get(version)!;
+    st.total++;
+    if (r.is_correct) st.correct++;
+    else if (r.selected_option) st.wrongCounts[r.selected_option] = (st.wrongCounts[r.selected_option] || 0) + 1;
+  }
+  const questionAccuracy = Array.from(qStats.values()).map((st) => {
+    const commonWrong = Object.entries(st.wrongCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    const q = st.snapshot;
+    return { question_id: st.id, class: st.cls, subject_tag: q.subject_tag, difficulty: q.difficulty, question_text: q.question_text,
+      correct_option: q.correct_option, attempts: st.total, correct: st.correct, accuracy_pct: Math.round(st.correct / st.total * 100),
+      most_common_wrong_option: commonWrong, most_common_wrong_text: commonWrong ? q[`option_${commonWrong}` as keyof QuestionSnapshot] : null };
+  }).sort((a, b) => a.accuracy_pct - b.accuracy_pct || b.attempts - a.attempts);
 
   return {
     database_mode: isSupabaseConfigured() ? 'supabase' : 'local_json',

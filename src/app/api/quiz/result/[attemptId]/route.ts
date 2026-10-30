@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRequestAuth } from '@/lib/auth';
+import { getRequestAuth } from '@/lib/auth-server';
 import {
   getDetailedAttemptReview,
   getExamConfigByClass,
@@ -7,14 +7,14 @@ import {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { attemptId: string } }
+  { params }: { params: Promise<{ attemptId: string }> }
 ) {
   const auth = await getRequestAuth(req);
   if (!auth || auth.role !== 'student') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const review = await getDetailedAttemptReview(params.attemptId);
+  const review = await getDetailedAttemptReview((await params).attemptId);
   if (!review || review.attempt.student_id !== auth.sub) {
     return NextResponse.json(
       { error: 'Attempt not found.' },
@@ -22,9 +22,9 @@ export async function GET(
     );
   }
 
-  if (review.attempt.status === 'in_progress') {
+  if (review.attempt.status !== 'submitted' && review.attempt.status !== 'graded') {
     return NextResponse.json(
-      { error: 'Please submit your exam first before viewing results.' },
+      { error: 'A result is available only for a completed exam.' },
       { status: 400 }
     );
   }
@@ -50,7 +50,7 @@ export async function GET(
       correct_count: review.attempt.correct_count ?? 0,
       score_percentage: review.attempt.score_percentage ?? 0,
       passed: Boolean(review.attempt.passed),
-      passing_score: config.passing_score,
+      passing_score: review.attempt.passing_score_snapshot,
     },
     student: review.student,
     items: review.items.map((item) => ({

@@ -19,11 +19,8 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     apiFetch<{ settings: EnrichedExamConfig[] }>('/api/admin/settings').then(
-      ({ ok, data }) => {
-        if (ok) setConfigs(data.settings || []);
-        setLoading(false);
-      }
-    );
+      ({ ok, data }) => { if (ok) setConfigs(data.settings || []); else setErrorNotice('Unable to load exam settings.'); }
+    ).catch(() => setErrorNotice('Connection failed. Please reload this page.')).finally(() => setLoading(false));
   }, []);
 
   const updateLocalField = (
@@ -41,83 +38,58 @@ export default function AdminSettingsPage() {
     setErrorNotice('');
     setSavedNotice('');
 
-    const { ok, data } = await apiFetch<{ message?: string; error?: string }>(
-      `/api/admin/settings/${cfg.class}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify({
-          is_open: cfg.is_open,
-          total_questions: Number(cfg.total_questions),
-          time_limit_minutes: Number(cfg.time_limit_minutes),
-          passing_score: Number(cfg.passing_score),
-          max_attempts: Number(cfg.max_attempts),
-          show_results_to_students: Boolean(cfg.show_results_to_students),
-        }),
+    try {
+      const { ok, data } = await apiFetch<{ message?: string; error?: string }>(
+        `/api/admin/settings/${cfg.class}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            is_open: cfg.is_open,
+            total_questions: Number(cfg.total_questions),
+            time_limit_minutes: Number(cfg.time_limit_minutes),
+            passing_score: Number(cfg.passing_score),
+            max_attempts: Number(cfg.max_attempts),
+          }),
+        }
+      );
+
+      if (!ok) {
+        setErrorNotice(data.error || 'We could not save settings for this class.');
+        return;
       }
-    );
 
-    setSavingClass(null);
-    if (!ok) {
-      setErrorNotice(data.error || 'We could not save settings for this class.');
-      return;
-    }
-
-    setSavedNotice(`Class ${cfg.class} configuration saved.`);
-    setTimeout(() => setSavedNotice(''), 3000);
+      setSavedNotice(`Class ${cfg.class} configuration saved.`);
+      setTimeout(() => setSavedNotice(''), 3000);
+    } catch { setErrorNotice('Connection failed. Settings were not confirmed; please retry.'); } finally { setSavingClass(null); }
   };
 
   const handleQuickToggleStudentResult = async (cfg: EnrichedExamConfig) => {
     const nextVal = !cfg.show_results_to_students;
-    updateLocalField(cfg.class, 'show_results_to_students', nextVal);
-    await apiFetch(`/api/admin/settings/${cfg.class}`, {
-      method: 'PUT',
-      body: JSON.stringify({ show_results_to_students: nextVal }),
-    });
-    setSavedNotice(
-      nextVal
-        ? `Class ${cfg.class} students can now view their score and question-wise answers.`
-        : `Class ${cfg.class} student results hidden.`
-    );
-    setTimeout(() => setSavedNotice(''), 3000);
+    if (nextVal && !window.confirm(`Publish results for Class ${cfg.class}? Students will see scores and answer keys. Publish only when the exam is finished.`)) return;
+    setErrorNotice(''); setSavedNotice('');
+    try {
+      const { ok, data } = await apiFetch<{ error?: string }>(`/api/admin/settings/${cfg.class}`, { method: 'PUT', body: JSON.stringify({ show_results_to_students: nextVal }) });
+      if (!ok) throw new Error(data.error || 'Unable to change result visibility.');
+      updateLocalField(cfg.class, 'show_results_to_students', nextVal);
+      setSavedNotice(nextVal ? `Class ${cfg.class} results are published.` : `Class ${cfg.class} results are hidden.`);
+    } catch (error) { setErrorNotice(error instanceof Error ? error.message : 'Connection failed.'); }
   };
 
-  const toggleAllWindows = async (open: boolean) => {
-    setConfigs((prev) => prev.map((c) => ({ ...c, is_open: open })));
-    await Promise.all(
-      configs.map((c) =>
-        apiFetch(`/api/admin/settings/${c.class}`, {
-          method: 'PUT',
-          body: JSON.stringify({ is_open: open }),
-        })
-      )
-    );
-    setSavedNotice(
-      open
-        ? 'Opened quiz windows for Classes 6 to 12.'
-        : 'Closed quiz windows for Classes 6 to 12.'
-    );
-    setTimeout(() => setSavedNotice(''), 3000);
+  const updateAll = async (field: 'is_open' | 'show_results_to_students', value: boolean) => {
+    if (field === 'show_results_to_students' && value && !window.confirm('Publish results for every class? Students will see scores and answer keys. Publish only when all exams are finished.')) return;
+    setErrorNotice(''); setSavedNotice('');
+    const results = await Promise.all(configs.map(async (c) => {
+      try { const response = await apiFetch<{ error?: string }>(`/api/admin/settings/${c.class}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) }); return { cls: c.class, ok: response.ok }; }
+      catch { return { cls: c.class, ok: false }; }
+    }));
+    const succeeded = new Set(results.filter((r) => r.ok).map((r) => r.cls));
+    setConfigs((prev) => prev.map((c) => succeeded.has(c.class) ? { ...c, [field]: value } : c));
+    const failed = results.filter((r) => !r.ok).map((r) => r.cls);
+    if (failed.length) setErrorNotice(`Could not update Class ${failed.join(', ')}. Other classes were updated.`);
+    else setSavedNotice(field === 'is_open' ? (value ? 'Exam windows opened.' : 'Exam windows closed.') : (value ? 'Results published.' : 'Results hidden.'));
   };
-
-  const toggleAllStudentResults = async (allow: boolean) => {
-    setConfigs((prev) =>
-      prev.map((c) => ({ ...c, show_results_to_students: allow }))
-    );
-    await Promise.all(
-      configs.map((c) =>
-        apiFetch(`/api/admin/settings/${c.class}`, {
-          method: 'PUT',
-          body: JSON.stringify({ show_results_to_students: allow }),
-        })
-      )
-    );
-    setSavedNotice(
-      allow
-        ? 'Released question-wise results to students across Classes 6 to 12.'
-        : 'Hidden quiz results from students across Classes 6 to 12.'
-    );
-    setTimeout(() => setSavedNotice(''), 3500);
-  };
+  const toggleAllWindows = (open: boolean) => updateAll('is_open', open);
+  const toggleAllStudentResults = (allow: boolean) => updateAll('show_results_to_students', allow);
 
   return (
     <AdminShell
@@ -131,7 +103,7 @@ export default function AdminSettingsPage() {
             className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-medium text-xs sm:text-sm inline-flex items-center gap-1.5 transition"
           >
             <Eye size={15} weight="regular" />
-            Release results (all)
+            Publish results (all)
           </button>
           <button
             type="button"

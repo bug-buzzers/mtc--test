@@ -9,9 +9,8 @@ import {
   getSectionFieldLabel,
   getSectionsForClass,
 } from '@/lib/constants';
-import { apiFetch, saveClientSession } from '@/lib/client-api';
-import { AuthTokenPayload } from '@/lib/types';
-import { ArrowLeft, ArrowRight, CheckCircle, Info } from '@phosphor-icons/react';
+import { apiFetch, clearClientSession } from '@/lib/client-api';
+import { ArrowLeft, ArrowRight, CheckCircle } from '@phosphor-icons/react';
 
 function StudentLoginForm() {
   const router = useRouter();
@@ -52,41 +51,33 @@ function StudentLoginForm() {
     }
   };
 
-  const fillDemoStudent = (roll: string, cls: number, sec: string) => {
-    setRollNumber(roll);
-    setSelectedClass(cls);
-    setSection(sec);
-    setPassword('student123');
-    setError('');
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const { ok, data } = await apiFetch<{
-      error?: string;
-      token?: string;
-      user?: AuthTokenPayload;
-    }>('/api/auth/student/login', {
-      method: 'POST',
-      body: JSON.stringify({
-        roll_number: rollNumber,
-        class: selectedClass,
-        section,
-        password,
-      }),
-    });
+    try {
+      const { ok, data } = await apiFetch<{
+        error?: string;
+        user?: { role: string };
+      }>('/api/auth/student/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          roll_number: rollNumber,
+          class: selectedClass,
+          section,
+          password,
+        }),
+      });
 
-    setLoading(false);
-    if (!ok || !data.token || !data.user) {
-      setError(data.error || 'We could not sign you in. Check your details and try again.');
-      return;
-    }
+      if (!ok || !data.user) {
+        setError(data.error || 'We could not sign you in. Check your details and try again.');
+        return;
+      }
 
-    saveClientSession(data.token, data.user);
-    router.push('/student/dashboard');
+      clearClientSession();
+      router.push('/student/dashboard');
+    } catch { setError('Connection failed. Please try again.'); } finally { setLoading(false); }
   };
 
   const sections = getSectionsForClass(selectedClass);
@@ -221,42 +212,7 @@ function StudentLoginForm() {
         </Link>
       </div>
 
-      {/* Quick Demo Fill Helper */}
-      <details className="mt-5 rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 text-xs text-slate-600">
-        <summary className="cursor-pointer font-medium text-slate-700 flex items-center gap-1.5 select-none">
-          <Info size={15} weight="regular" className="text-maple-600" />
-          Sample student accounts (click to fill)
-        </summary>
-        <div className="mt-2.5 space-y-2">
-          <p className="text-slate-500">
-            Ready to attempt quiz (password:{' '}
-            <code className="font-mono text-slate-700">student123</code>):
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={() => fillDemoStudent('601', 6, 'A')}
-              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-slate-300 active:scale-[0.98] font-mono text-slate-700 transition"
-            >
-              6-A · 601
-            </button>
-            <button
-              type="button"
-              onClick={() => fillDemoStudent('802', 8, 'B')}
-              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-slate-300 active:scale-[0.98] font-mono text-slate-700 transition"
-            >
-              8-B · 802
-            </button>
-            <button
-              type="button"
-              onClick={() => fillDemoStudent('1101', 11, 'Maths')}
-              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-slate-300 active:scale-[0.98] font-mono text-slate-700 transition"
-            >
-              11-Maths · 1101
-            </button>
-          </div>
-        </div>
-      </details>
+
     </div>
   );
 }
