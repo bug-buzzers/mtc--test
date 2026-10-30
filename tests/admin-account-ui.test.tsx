@@ -23,16 +23,34 @@ test('admin account page validates confirmation and shows the signed-out state',
   try {
     render(<AppRouterContext.Provider value={router}><PathnameContext.Provider value="/admin/account"><AccountPage /></PathnameContext.Provider></AppRouterContext.Provider>);
     await screen.findByRole('heading', { name: 'Change password' });
-    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'old-password-for-test' } });
-    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-password-for-test' } });
-    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'not-the-same-password' } });
+    const current = screen.getByLabelText('Current password') as HTMLInputElement;
+    const next = screen.getByLabelText('New password') as HTMLInputElement;
+    const confirm = screen.getByLabelText('Confirm new password') as HTMLInputElement;
+    assert.equal(current.autocomplete, 'current-password');
+    assert.equal(next.autocomplete, 'new-password');
+    assert.equal(confirm.autocomplete, 'new-password');
+    fireEvent.change(current, { target: { value: 'old-password-for-test' } });
+    fireEvent.change(next, { target: { value: 'new-password-for-test' } });
+    fireEvent.change(confirm, { target: { value: 'not-the-same-password' } });
     fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
     assert.match(screen.getByRole('alert').textContent || '', /do not match/i);
     assert.equal(calls.filter((call) => call.path === '/api/auth/admin/password').length, 0);
-    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'new-password-for-test' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate strong password' }));
+    const generated = next.value;
+    assert.match(generated, /^[A-Za-z0-9_-]{24}$/);
+    assert.equal(confirm.value, generated);
+    assert.equal(current.value, 'old-password-for-test');
+    assert.equal(next.type, 'password');
+    assert.equal(screen.getByLabelText('Visible password').textContent, generated);
+    assert.match(screen.getByRole('status').textContent || '', /save it securely/i);
+    assert.equal(calls.filter((call) => call.path === '/api/auth/admin/password').length, 0);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide password' }));
+    assert.equal(screen.queryByLabelText('Visible password'), null);
     fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
     await waitFor(() => assert.ok(screen.getByRole('status').textContent?.includes('Password changed')));
-    assert.deepEqual(calls.find((call) => call.path === '/api/auth/admin/password')?.body, { current_password: 'old-password-for-test', new_password: 'new-password-for-test' });
+    assert.deepEqual(calls.find((call) => call.path === '/api/auth/admin/password')?.body, { current_password: 'old-password-for-test', new_password: generated });
     assert.ok(screen.getByRole('link', { name: 'Sign in again' }));
+    assert.equal(JSON.stringify(dom.window.localStorage).includes(generated), false);
   } finally { cleanup(); dom.window.close(); }
 });

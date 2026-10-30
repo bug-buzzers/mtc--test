@@ -88,7 +88,9 @@ export default function AdminLoginPage() {
               </label>
               <input
                 id="admin-user"
+                name="username"
                 type="text"
+                autoComplete="username"
                 required
                 placeholder="admin"
                 value={username}
@@ -106,7 +108,9 @@ export default function AdminLoginPage() {
               </label>
               <input
                 id="admin-pass"
+                name="password"
                 type="password"
+                autoComplete="current-password"
                 required
                 placeholder="Enter coordinator password"
                 value={password}

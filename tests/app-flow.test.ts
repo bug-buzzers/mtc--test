@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { NextRequest } from 'next/server';
 import { SignJWT } from 'jose';
+import { generateSecurePassword } from '../src/lib/password-generation';
 
 function request(url: string, method = 'GET', body?: unknown, cookie?: string) {
   return new NextRequest(`http://school.test${url}`, {
@@ -68,7 +69,7 @@ test('authenticated registration, question bank, integrity, grading and publishe
     assert.equal(adminResponse.status, 200);
     const adminCookie = cookieFrom(adminResponse);
     assert.match(adminResponse.headers.get('set-cookie') || '', /HttpOnly/i);
-    const registration = { full_name: 'First Student', roll_number: 'T001', class: 6, section: 'A', password: 'student-test-password' };
+    const registration = { full_name: 'First Student', roll_number: 'T001', class: 6, section: 'A', password: generateSecurePassword() };
     assert.equal((await register.POST(request('/api/auth/student/register', 'POST', { ...registration, class: 11, section: 'A' }))).status, 400, 'class and section must be valid');
     assert.equal((await register.POST(request('/api/auth/student/register', 'POST', { ...registration, password: 'short' }))).status, 400, 'a strong password is still required');
     const registered = await register.POST(request('/api/auth/student/register', 'POST', registration));
@@ -80,7 +81,7 @@ test('authenticated registration, question bank, integrity, grading and publishe
     assert.notEqual(local.readLocalDb().students[0].password_hash, registration.password, 'passwords must still be hashed');
     for (let i = 0; i < 8; i++) assert.equal(await consumeRateLimit('registration', '6:A:RATE', 'unknown', 8), true);
     assert.equal((await register.POST(request('/api/auth/student/register', 'POST', { ...registration, roll_number: 'RATE' }))).status, 429, 'registration remains rate-limited');
-    const login = await studentLogin.POST(request('/api/auth/student/login', 'POST', { roll_number: 'T001', class: 6, section: 'A', password: 'student-test-password' }));
+    const login = await studentLogin.POST(request('/api/auth/student/login', 'POST', { roll_number: 'T001', class: 6, section: 'A', password: registration.password }));
     assert.equal(login.status, 200);
     const studentCookie = cookieFrom(login);
     assert.equal((await questions.GET(request('/api/admin/questions', 'GET', undefined, studentCookie))).status, 403);
