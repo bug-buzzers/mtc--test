@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import AdminShell from '@/components/AdminShell';
 import { apiFetch, clearClientSession } from '@/lib/client-api';
+import { generateSecurePassword } from '@/lib/password-generation';
 import { isValidAdminPassword } from '@/lib/password-policy';
 import { Key } from '@phosphor-icons/react';
 
@@ -11,9 +12,24 @@ export default function AdminAccountPage() {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [changed, setChanged] = useState(false);
   const [error, setError] = useState('');
+
+  const generatePassword = () => {
+    try {
+      const generated = generateSecurePassword();
+      setNext(generated);
+      setConfirm(generated);
+      setShowPassword(true);
+      setGeneratedPassword(true);
+      setError('');
+    } catch {
+      setError('Secure password generation is unavailable. Use your password manager or choose a unique password.');
+    }
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -29,7 +45,7 @@ export default function AdminAccountPage() {
         method: 'POST', body: JSON.stringify({ current_password: current, new_password: next }),
       });
       if (!response.ok) { setError(response.data.error || 'Unable to change your password.'); return; }
-      setCurrent(''); setNext(''); setConfirm(''); clearClientSession(); setChanged(true);
+      setCurrent(''); setNext(''); setConfirm(''); setShowPassword(false); setGeneratedPassword(false); clearClientSession(); setChanged(true);
     } catch { setError('Connection failed. The password change was not confirmed; try signing in before retrying.'); }
     finally { setSaving(false); }
   };
@@ -51,16 +67,27 @@ export default function AdminAccountPage() {
             <form onSubmit={submit} className="mt-6 space-y-4">
               <div className="flex flex-col gap-2">
                 <label htmlFor="current-password" className="text-sm font-medium text-slate-700">Current password</label>
-                <input id="current-password" type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-maple-500" />
+                <input id="current-password" name="current_password" type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-maple-500" />
               </div>
               <div className="flex flex-col gap-2">
                 <label htmlFor="new-password" className="text-sm font-medium text-slate-700">New password</label>
-                <input id="new-password" type="password" autoComplete="new-password" required minLength={12} value={next} onChange={(e) => setNext(e.target.value)} className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-maple-500" />
+                <input id="new-password" name="new_password" type="password" autoComplete="new-password" required minLength={12} value={next} onChange={(e) => { setNext(e.target.value); setGeneratedPassword(false); }} className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-maple-500" />
               </div>
               <div className="flex flex-col gap-2">
                 <label htmlFor="confirm-password" className="text-sm font-medium text-slate-700">Confirm new password</label>
-                <input id="confirm-password" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-maple-500" />
+                <input id="confirm-password" name="confirm_password" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-maple-500" />
               </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium">
+                <button type="button" disabled={saving} onClick={generatePassword} className="text-maple-600 hover:text-maple-700 disabled:opacity-60">Generate strong password</button>
+                <button type="button" disabled={!next} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)} className="text-slate-600 hover:text-slate-900 disabled:opacity-60">{showPassword ? 'Hide password' : 'Show password'}</button>
+              </div>
+              {generatedPassword && <p role="status" className="text-xs text-slate-600">Generated on this device. Save it securely before changing your password.</p>}
+              {showPassword && next && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  <span className="block text-xs font-medium">Password to save</span>
+                  <code aria-label="Visible password" className="mt-1 block select-all break-all">{next}</code>
+                </div>
+              )}
               <button type="submit" disabled={saving} className="inline-flex min-h-[46px] items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60">
                 <Key size={16} /> {saving ? 'Changing password...' : 'Change password'}
               </button>
