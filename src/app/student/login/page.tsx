@@ -98,7 +98,7 @@ function StudentLoginForm() {
       {registeredBanner && (
         <div className="mb-5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 text-sm font-medium flex items-center gap-2.5">
           <CheckCircle size={18} weight="regular" className="text-maple-600 shrink-0" />
-          <span>Account created. Enter your password below to continue.</span>
+          <span>Account created. Enter your password below to continue. If Chrome reports it was exposed, ask your teacher to reset it.</span>
         </div>
       )}
 
@@ -121,7 +121,9 @@ function StudentLoginForm() {
           </label>
           <input
             id="login-roll"
+            name="username"
             type="text"
+            autoComplete="username"
             required
             placeholder="e.g. 802"
             value={rollNumber}
@@ -183,7 +185,9 @@ function StudentLoginForm() {
           </label>
           <input
             id="login-password"
+            name="password"
             type="password"
+            autoComplete="current-password"
             required
             placeholder="Enter your password"
             value={password}

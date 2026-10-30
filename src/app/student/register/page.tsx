@@ -10,6 +10,7 @@ import {
   getSectionsForClass,
 } from '@/lib/constants';
 import { apiFetch } from '@/lib/client-api';
+import { generateSecurePassword } from '@/lib/password-generation';
 import { ArrowLeft, UserPlus } from '@phosphor-icons/react';
 
 export default function StudentRegisterPage() {
@@ -21,6 +22,8 @@ export default function StudentRegisterPage() {
   const [section, setSection] = useState<string>('A');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -29,6 +32,19 @@ export default function StudentRegisterPage() {
     const validSections = getSectionsForClass(newClass);
     if (!validSections.includes(section)) {
       setSection(validSections[0]);
+    }
+  };
+
+  const generatePassword = () => {
+    try {
+      const generated = generateSecurePassword();
+      setPassword(generated);
+      setConfirmPassword(generated);
+      setShowPassword(true);
+      setGeneratedPassword(true);
+      setError('');
+    } catch {
+      setError('Secure password generation is unavailable. Use your password manager or choose a unique password.');
     }
   };
 
@@ -43,6 +59,11 @@ export default function StudentRegisterPage() {
 
     if (password !== confirmPassword) {
       setError('Passwords do not match. Re-enter both fields.');
+      return;
+    }
+
+    if (new TextEncoder().encode(password).length > 72) {
+      setError('Your password must be at most 72 UTF-8 bytes.');
       return;
     }
 
@@ -126,7 +147,9 @@ export default function StudentRegisterPage() {
               </label>
               <input
                 id="reg-name"
+                name="full_name"
                 type="text"
+                autoComplete="name"
                 required
                 placeholder="e.g. Aarav Sharma"
                 value={fullName}
@@ -144,7 +167,9 @@ export default function StudentRegisterPage() {
               </label>
               <input
                 id="reg-roll"
+                name="username"
                 type="text"
+                autoComplete="username"
                 required
                 placeholder="e.g. 2413"
                 value={rollNumber}
@@ -207,12 +232,15 @@ export default function StudentRegisterPage() {
                 </label>
                 <input
                   id="reg-pass"
+                  name="password"
                   type="password"
+                  autoComplete="new-password"
+                  aria-describedby="student-password-help"
                   required
                   minLength={10}
                   placeholder="Min 10 characters"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => { setPassword(e.target.value); setGeneratedPassword(false); }}
                   className="w-full min-h-[46px] px-4 py-2.5 rounded-xl border border-slate-300/90 bg-white focus:border-maple-500 outline-none text-sm transition"
                 />
               </div>
@@ -226,7 +254,9 @@ export default function StudentRegisterPage() {
                 </label>
                 <input
                   id="reg-confirm"
+                  name="confirm_password"
                   type="password"
+                  autoComplete="new-password"
                   required
                   minLength={10}
                   placeholder="Repeat password"
@@ -236,6 +266,25 @@ export default function StudentRegisterPage() {
                 />
               </div>
             </div>
+
+            <p id="student-password-help" className="text-xs leading-relaxed text-slate-600">
+              Use a unique password you do not use elsewhere. If Chrome warns after registration, ask your teacher to reset it.
+            </p>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium">
+              <button type="button" disabled={loading} onClick={generatePassword} className="text-maple-600 hover:text-maple-700 disabled:opacity-60">
+                Generate strong password
+              </button>
+              <button type="button" disabled={!password} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)} className="text-slate-600 hover:text-slate-900 disabled:opacity-60">
+                {showPassword ? 'Hide password' : 'Show password'}
+              </button>
+            </div>
+            {generatedPassword && <p role="status" className="text-xs text-slate-600">Generated on this device. Save it securely before creating your account.</p>}
+            {showPassword && password && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <span className="block text-xs font-medium">Password to save</span>
+                <code aria-label="Visible password" className="mt-1 block select-all break-all">{password}</code>
+              </div>
+            )}
 
             <button
               type="submit"
