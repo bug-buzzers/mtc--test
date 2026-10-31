@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import MaplesLogo from '@/components/MaplesLogo';
+import PasswordInput from '@/components/PasswordInput';
 import {
   CLASSES,
   getSectionFieldLabel,
@@ -183,10 +184,9 @@ function StudentLoginForm() {
           >
             Password
           </label>
-          <input
+          <PasswordInput
             id="login-password"
             name="password"
-            type="password"
             autoComplete="current-password"
             required
             placeholder="Enter your password"
