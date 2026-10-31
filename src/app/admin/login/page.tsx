@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import MaplesLogo from '@/components/MaplesLogo';
+import PasswordInput from '@/components/PasswordInput';
 import { apiFetch, clearClientSession } from '@/lib/client-api';
 import { ArrowLeft, Key } from '@phosphor-icons/react';
 
@@ -106,10 +107,9 @@ export default function AdminLoginPage() {
               >
                 Password
               </label>
-              <input
+              <PasswordInput
                 id="admin-pass"
                 name="password"
-                type="password"
                 autoComplete="current-password"
                 required
                 placeholder="Enter coordinator password"
