@@ -8,6 +8,3 @@ build
 *.tsbuildinfo
 next-env.d.ts
 .env
-# Private runtime data and question imports must never be committed.
-data/
-private/
