@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AdminShell from '@/components/AdminShell';
+import ShareTestCard, { WhatsAppShareButton } from '@/components/ShareTestCard';
 import { apiFetch } from '@/lib/client-api';
 import {
   ArrowRight,
@@ -100,13 +101,16 @@ export default function AdminDashboardPage() {
       title="Coordinator overview"
       subtitle="Maples Academy, Khatauli · Entrance examination operations"
       actions={
-        <Link
-          href="/admin/results/print"
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-medium text-sm transition duration-200"
-        >
-          <Printer size={16} weight="regular" />
-          Print shortlist sheet
-        </Link>
+        <>
+          <WhatsAppShareButton size="sm" label="Share test on WhatsApp" />
+          <Link
+            href="/admin/results/print"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-medium text-sm transition duration-200"
+          >
+            <Printer size={16} weight="regular" />
+            Print shortlist sheet
+          </Link>
+        </>
       }
     >
       {/* Tabular Monospace KPI Strip (Divide-X / Border Grouping — Anti-Card Clutter) */}
@@ -282,6 +286,9 @@ export default function AdminDashboardPage() {
           </div>
         </section>
       </div>
+
+      {/* WhatsApp Invitation & Link Generator for Class Groups */}
+      <ShareTestCard />
     </AdminShell>
   );
 }

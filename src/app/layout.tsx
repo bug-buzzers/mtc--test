@@ -1,20 +1,26 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 import '@fontsource-variable/outfit';
 import '@fontsource-variable/jetbrains-mono';
 import './globals.css';
+import { buildPortalMetadata } from '@/lib/share-test';
 
-export const metadata: Metadata = {
-  title: 'Maples Tech Club — Entrance Portal | Maples Academy, Khatauli',
-  description:
-    'Online entrance quiz portal for Maples Tech Club at Maples Academy, Khatauli (Classes 6 to 12). Practical everyday computer literacy with random quiz selection.',
-  openGraph: {
-    title: 'Maples Tech Club — Entrance Portal',
-    description:
-      'Learn it. Build it. Ship it. Practical computer entrance quiz for Classes 6 to 12 at Maples Academy, Khatauli.',
-    type: 'website',
-    locale: 'en_IN',
-  },
+export const viewport: Viewport = {
+  themeColor: '#C25934',
+  width: 'device-width',
+  initialScale: 1,
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  let headersList: Awaited<ReturnType<typeof headers>> | null = null;
+  try {
+    headersList = await headers();
+  } catch {
+    headersList = null;
+  }
+
+  return buildPortalMetadata(headersList);
+}
 
 export default function RootLayout({
   children,

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
+import { WhatsAppShareButton } from '@/components/ShareTestCard';
 import { apiFetch } from '@/lib/client-api';
 import { ExamConfig } from '@/lib/types';
 import { Eye, EyeSlash, FloppyDisk } from '@phosphor-icons/react';
@@ -317,15 +318,27 @@ export default function AdminSettingsPage() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={savingClass === cfg.class}
-                  onClick={() => handleSaveClass(cfg)}
-                  className="mt-6 w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] disabled:opacity-60 text-white font-medium text-sm flex items-center justify-center gap-2 transition"
-                >
-                  <FloppyDisk size={16} weight="regular" />
-                  {savingClass === cfg.class ? 'Saving...' : 'Save changes'}
-                </button>
+                <div className="mt-6 flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    type="button"
+                    disabled={savingClass === cfg.class}
+                    onClick={() => handleSaveClass(cfg)}
+                    className="flex-1 min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] disabled:opacity-60 text-white font-medium text-sm flex items-center justify-center gap-2 transition"
+                  >
+                    <FloppyDisk size={16} weight="regular" />
+                    {savingClass === cfg.class ? 'Saving...' : 'Save changes'}
+                  </button>
+
+                  <WhatsAppShareButton
+                    targetClass={cfg.class}
+                    totalQuestions={Number(cfg.total_questions)}
+                    timeLimitMinutes={Number(cfg.time_limit_minutes)}
+                    passingScore={Number(cfg.passing_score)}
+                    size="sm"
+                    label={`Share Class ${cfg.class}`}
+                    className="min-h-[44px]"
+                  />
+                </div>
               </div>
             );
           })}

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import MaplesLogo from '@/components/MaplesLogo';
 import PasswordInput from '@/components/PasswordInput';
+import { WhatsAppShareButton } from '@/components/ShareTestCard';
 import {
   CLASSES,
   getSectionFieldLabel,
@@ -206,14 +207,21 @@ function StudentLoginForm() {
         </button>
       </form>
 
-      <div className="mt-6 pt-5 border-t border-slate-100 text-sm text-slate-600">
-        First time here?{' '}
-        <Link
-          href="/student/register"
-          className="font-semibold text-maple-600 hover:text-maple-700 transition-colors"
-        >
-          Register roll number
-        </Link>
+      <div className="mt-6 pt-5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+        <div>
+          First time here?{' '}
+          <Link
+            href="/student/register"
+            className="font-semibold text-maple-600 hover:text-maple-700 transition-colors"
+          >
+            Register roll number
+          </Link>
+        </div>
+        <WhatsAppShareButton
+          targetClass={selectedClass}
+          size="sm"
+          label="Share test"
+        />
       </div>
 
 

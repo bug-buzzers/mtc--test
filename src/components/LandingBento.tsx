@@ -440,7 +440,7 @@ export function ClassFormatExplorer() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.22 }}
-            className="bg-white rounded-[2.5rem] p-8 sm:p-10 border border-slate-200/60 shadow-diffusion"
+            className="bg-white rounded-[2.5rem] p-6 sm:p-10 border border-slate-200/60 shadow-diffusion"
           >
             <div className="flex flex-wrap items-baseline justify-between gap-3 pb-6 border-b border-slate-100">
               <div>

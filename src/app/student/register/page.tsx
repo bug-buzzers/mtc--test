@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import MaplesLogo from '@/components/MaplesLogo';
+import { WhatsAppShareButton } from '@/components/ShareTestCard';
 import {
   CLASSES,
   getSectionFieldLabel,
   getSectionsForClass,
+  isValidClass,
 } from '@/lib/constants';
 import { apiFetch } from '@/lib/client-api';
 import { generateSecurePassword } from '@/lib/password-generation';
@@ -26,6 +28,18 @@ export default function StudentRegisterPage() {
   const [generatedPassword, setGeneratedPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const cls = Number(params.get('class'));
+    if (isValidClass(cls)) {
+      setSelectedClass(cls);
+      const validSecs = getSectionsForClass(cls);
+      const sec = params.get('section');
+      setSection(sec && validSecs.includes(sec) ? sec : validSecs[0]);
+    }
+  }, []);
 
   const handleClassChange = (newClass: number) => {
     setSelectedClass(newClass);
@@ -296,14 +310,21 @@ export default function StudentRegisterPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-slate-100 text-sm text-slate-600">
-            Already registered?{' '}
-            <Link
-              href="/student/login"
-              className="font-semibold text-maple-600 hover:text-maple-700 transition-colors"
-            >
-              Sign in here
-            </Link>
+          <div className="mt-6 pt-5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+            <div>
+              Already registered?{' '}
+              <Link
+                href="/student/login"
+                className="font-semibold text-maple-600 hover:text-maple-700 transition-colors"
+              >
+                Sign in here
+              </Link>
+            </div>
+            <WhatsAppShareButton
+              targetClass={selectedClass}
+              size="sm"
+              label="Share test"
+            />
           </div>
         </div>
       </div>

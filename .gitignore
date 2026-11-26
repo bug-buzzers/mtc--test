@@ -8,3 +8,6 @@ build
 *.tsbuildinfo
 next-env.d.ts
 .env
+.kiro
+# Ignore Supabase CLI temp/build artifacts, but keep tracked SQL migrations
+supabase/.temp/

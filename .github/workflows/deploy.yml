@@ -1,0 +1,69 @@
+name: Deploy
+
+# Continuous Delivery — builds the production app on every push to main and
+# ships it. Deploy target is Vercel when configured; otherwise the built
+# artifact is uploaded for manual pickup.
+#
+# To enable Vercel deploys, add these repository secrets:
+#   VERCEL_TOKEN        — a Vercel access token (https://vercel.com/account/tokens)
+#   VERCEL_ORG_ID       — your Vercel org/team id
+#   VERCEL_PROJECT_ID   — the Vercel project id (run `vercel link` once locally)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-key' }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET || 'placeholder-jwt-secret-for-build-only' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+
+      # Always keep a built artifact so a deploy can be retrieved manually
+      # even when no hosting target is configured yet.
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build-${{ github.sha }}
+          path: |
+            .next
+            public
+          retention-days: 14
+
+      # ----- Optional Vercel deploy (only runs when secrets are configured) -----
+      - name: Deploy to Vercel
+        if: ${{ vars.VERCEL_DEPLOY_ENABLED == 'true' && secrets.VERCEL_TOKEN != '' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npx vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN"
+          npx vercel@latest build --prod --token "$VERCEL_TOKEN"
+          npx vercel@latest deploy --prebuilt --prod --token "$VERCEL_TOKEN"

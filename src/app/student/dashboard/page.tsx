@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import MaplesLogo from '@/components/MaplesLogo';
+import ShareTestCard from '@/components/ShareTestCard';
 import { formatSectionDisplay } from '@/lib/constants';
 import { apiFetch, clearClientSession } from '@/lib/client-api';
 import { StudentAttemptHistoryItem } from '@/lib/types';
@@ -321,6 +322,18 @@ export default function StudentDashboardPage() {
           {classmates.length ? <ul className="mt-5 flex flex-wrap gap-2">{classmates.map((name, i) => <li key={`${name}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-700">{name}</li>)}</ul> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No classmates have registered in your section yet.</p>}
           <p className="mt-4 text-xs text-slate-400">Only names are shown; scores, roll numbers and other personal details remain private.</p>
         </section>
+
+        <ShareTestCard
+          variant="compact"
+          defaultClass={student.class}
+          classSettings={[
+            {
+              class: student.class,
+              total_questions: exam.total_questions,
+              time_limit_minutes: exam.time_limit_minutes,
+            },
+          ]}
+        />
 
         {/* Past Quiz Activity (Clean Divide-Y List, No Box Clutter) */}
         <section>
